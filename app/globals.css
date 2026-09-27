@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --color-teal: #22635f;
+  --color-teal-dark: #184240;
+  --color-teal-light: #e3efed;
+  --color-orange: #f2943c;
+  --color-orange-soft: #f9a741;
+  --color-brand: #d58540;
+  --color-rust: #c6502c;
+  --color-rust-dark: #a7401f;
+  --color-sand: #ddd6cc;
+  --color-sand-light: #ece7e0;
+  --color-cream: #f7f0e4;
+  --color-ink: #332d25;
+
+  --font-display: var(--font-oswald), "Arial Narrow", sans-serif;
+  --font-heavy: var(--font-montserrat), system-ui, sans-serif;
+  --font-script: var(--font-kaushan), cursive;
+  --font-sans: var(--font-jakarta), system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  background: var(--color-sand);
+  color: var(--color-ink);
+}
+
+/* Montañas del encabezado: crestas en capas sobre el teal. */
+.mountains {
+  background-color: var(--color-teal);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 260' preserveAspectRatio='none'%3E%3Cpath fill='%231d5652' d='M0 150 L90 110 L170 135 L260 80 L350 120 L430 95 L520 140 L610 70 L700 115 L790 90 L880 130 L960 60 L1050 110 L1140 85 L1230 125 L1320 75 L1440 115 V260 H0Z'/%3E%3Cpath fill='%23194b47' d='M0 200 L110 150 L200 180 L300 130 L400 175 L500 145 L600 190 L720 120 L820 170 L930 140 L1030 185 L1140 135 L1250 175 L1350 150 L1440 170 V260 H0Z'/%3E%3Cpath fill='%23164340' d='M0 235 L140 200 L260 225 L380 190 L520 230 L660 205 L800 235 L940 200 L1080 228 L1220 205 L1340 230 L1440 210 V260 H0Z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: bottom;
+  background-size: 100% 75%;
+}
+
+/* Franja decorativa de tipis (divisor de secciones). */
+.tipi-divider {
+  height: 14px;
+  background-image: linear-gradient(135deg, var(--color-rust) 25%, transparent 25%),
+    linear-gradient(225deg, var(--color-rust) 25%, transparent 25%);
+  background-size: 28px 28px;
+  background-position: 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
