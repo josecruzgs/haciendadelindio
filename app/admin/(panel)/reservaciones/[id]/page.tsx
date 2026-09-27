@@ -7,7 +7,7 @@ import { fmtKey, fmtKeyCap } from "@/lib/dates";
 import { getReservation } from "@/lib/reservations";
 import { getRoom } from "@/data/rooms";
 import { WhatsAppIcon } from "@/components/BrandIcons";
-import { ago, Card, guestsLabel, money, StatusBadge } from "@/components/admin/ui";
+import { ago, Card, ChannelTag, guestsLabel, money, StatusBadge } from "@/components/admin/ui";
 import StatusButtons from "../../StatusButtons";
 import NotesForm from "./NotesForm";
 
@@ -60,7 +60,7 @@ export default async function ReservationDetail({ params }: { params: Promise<{ 
         <h1 className="font-display text-4xl text-teal">{r.code}</h1>
         <StatusBadge status={r.status} />
         <span className="text-sm text-ink/55">
-          {r.source === "admin" ? "Captura manual" : "Solicitud web"} · recibida {ago(r.created_at)}
+          <ChannelTag channel={r.channel} /> · recibida {ago(r.created_at)}
         </span>
         <div className="ml-auto">
           <StatusButtons id={r.id} status={r.status} size="md" />

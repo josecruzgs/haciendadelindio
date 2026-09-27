@@ -1,6 +1,6 @@
 import { getRoom, mxn } from "@/data/rooms";
 import { fmtKey } from "@/lib/dates";
-import type { Reservation, Status } from "@/lib/reservations";
+import type { Channel, Reservation, Status } from "@/lib/reservations";
 
 export const statusMeta: Record<Status, { label: string; cls: string }> = {
   pendiente: { label: "Pendiente", cls: "bg-orange/20 text-rust-dark ring-orange/40" },
@@ -8,6 +8,17 @@ export const statusMeta: Record<Status, { label: string; cls: string }> = {
   completada: { label: "Completada", cls: "bg-ink/10 text-ink ring-ink/20" },
   cancelada: { label: "Cancelada", cls: "bg-rust/10 text-rust line-through ring-rust/20" },
 };
+
+export const channelMeta: Record<Channel, { label: string; cls: string }> = {
+  directa: { label: "Reserva directa", cls: "bg-rust/10 text-rust-dark" },
+  whatsapp: { label: "WhatsApp", cls: "bg-[#25d366]/15 text-[#128c4a]" },
+  recepcion: { label: "Recepción", cls: "bg-ink/10 text-ink/70" },
+};
+
+export function ChannelTag({ channel }: { channel: Channel }) {
+  const m = channelMeta[channel] ?? channelMeta.whatsapp;
+  return <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide uppercase ${m.cls}`}>{m.label}</span>;
+}
 
 export function StatusBadge({ status }: { status: Status }) {
   const m = statusMeta[status];

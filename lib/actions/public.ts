@@ -7,6 +7,8 @@ import { quote, roomBySlug } from "../pricing";
 import { insertReservation, isRangeBlocked } from "../reservations";
 
 export type BookingInput = {
+  /** "directa" = botón Reservar ahora; "whatsapp" = también abre WhatsApp. */
+  channel: "directa" | "whatsapp";
   room: string;
   rooms: number;
   adults: number;
@@ -64,6 +66,7 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
     const { code } = await insertReservation({
       status: "pendiente",
       source: "web",
+      channel: input.channel === "directa" ? "directa" : "whatsapp",
       room: room.slug,
       rooms,
       adults,

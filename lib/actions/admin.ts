@@ -85,6 +85,7 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
   const { id } = await insertReservation({
     status,
     source: "admin",
+    channel: "recepcion",
     room: room.slug,
     rooms,
     adults,

@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS reservations (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Canal por el que llegó: directa (botón Reservar ahora), whatsapp o recepcion (captura manual)
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'whatsapp';
 CREATE INDEX IF NOT EXISTS reservations_status_idx ON reservations (status);
 CREATE INDEX IF NOT EXISTS reservations_check_in_idx ON reservations (check_in);
 

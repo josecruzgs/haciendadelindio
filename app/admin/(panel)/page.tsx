@@ -3,7 +3,7 @@ import { BedDouble, CalendarArrowDown, CalendarArrowUp, Clock, Wallet } from "lu
 import { requireAdmin } from "@/lib/auth";
 import { fmtKey, fmtKeyCap, todayKey } from "@/lib/dates";
 import { dashboardStats, listReservations, upcomingArrivals } from "@/lib/reservations";
-import { ago, Card, guestsLabel, money, roomLabel, stayLabel, StatusBadge } from "@/components/admin/ui";
+import { ago, Card, ChannelTag, guestsLabel, money, roomLabel, stayLabel, StatusBadge } from "@/components/admin/ui";
 import StatusButtons from "./StatusButtons";
 
 export default async function DashboardPage() {
@@ -74,7 +74,7 @@ export default async function DashboardPage() {
                 <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
                   <Link href={`/admin/reservaciones/${r.id}`} className="min-w-0 flex-1 hover:underline">
                     <p className="font-bold text-ink">
-                      {r.name} <span className="font-normal text-ink/50">· {r.code}</span>
+                      {r.name} <span className="font-normal text-ink/50">· {r.code}</span> <ChannelTag channel={r.channel} />
                     </p>
                     <p className="text-sm text-ink/70">
                       {roomLabel(r)} · {stayLabel(r)} · {guestsLabel(r)} · <strong>{money(r.total)}</strong>

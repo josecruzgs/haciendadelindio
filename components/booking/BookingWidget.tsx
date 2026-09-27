@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BedDouble, CalendarDays, Check, CircleCheckBig, Coffee, LoaderCircle, Minus, PawPrint, Phone, Plus, Users, X } from "lucide-react";
+import { BedDouble, CalendarCheck, CalendarDays, Check, CircleCheckBig, Coffee, LoaderCircle, Minus, PawPrint, Phone, Plus, Users, X } from "lucide-react";
 import RangeCalendar from "./RangeCalendar";
 import { addDays, fmtLong, fmtShort, nightsBetween, startOfDay, toKey } from "./dates";
 import { WhatsAppIcon } from "../BrandIcons";
@@ -12,6 +12,7 @@ import { quote } from "@/lib/pricing";
 import { createReservation } from "@/lib/actions/public";
 
 type Popover = "dates" | "guests" | null;
+type Channel = "directa" | "whatsapp";
 const MAX_ROOMS = 10;
 
 export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?: Room["slug"] }) {
@@ -31,9 +32,9 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
   const [touched, setTouched] = useState(false);
   const [wide, setWide] = useState(false);
   const [website, setWebsite] = useState(""); // campo trampa anti-spam
-  const [sending, setSending] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [sent, setSent] = useState<{ code: string; url: string } | null>(null);
+  const [sending, setSendingMode] = useState<Channel | null>(null);
+  const [sent, setSent] = useState<{ code: string; url: string; channel: Channel } | null>(null);
   const [availability, setAvailability] = useState<Record<string, string[]>>({});
 
   const boxRef = useRef<HTMLDivElement>(null);
@@ -126,17 +127,18 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       .filter((l, i, arr) => l !== "" || (i > 0 && arr[i - 1] !== ""))
       .join("\n");
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  /** "directa": se guarda y confirma en pantalla. "whatsapp": se guarda y además abre WhatsApp. */
+  const submit = async (channel: Channel) => {
     setTouched(true);
     setServerError("");
     if (!valid || sending || !checkIn || !checkOut) return;
 
-    // Abrir la pestaña de WhatsApp dentro del clic (evita bloqueadores) y llenarla al guardar
-    const tab = window.open("", "_blank");
+    // Para WhatsApp, abrir la pestaña dentro del clic (evita bloqueadores) y llenarla al guardar
+    const tab = channel === "whatsapp" ? window.open("", "_blank") : null;
     if (tab) tab.opener = null;
-    setSending(true);
+    setSendingMode(channel);
     const res = await createReservation({
+      channel,
       room: room.slug,
       rooms: roomCount,
       adults,
@@ -149,7 +151,20 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       notes,
       website,
     }).catch(() => ({ ok: false as const, error: "Sin conexión.", retryable: true }));
-    setSending(false);
+    setSendingMode(null);
+
+    if (channel === "directa") {
+      if (!res.ok) {
+        setServerError(
+          res.retryable
+            ? "No pudimos registrar tu reservación en este momento. Intenta de nuevo o envíala por WhatsApp."
+            : res.error,
+        );
+        return;
+      }
+      setSent({ code: res.code, url: whatsappUrl(message(res.code)), channel });
+      return;
+    }
 
     if (!res.ok && !res.retryable) {
       tab?.close();
@@ -160,7 +175,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
     const url = whatsappUrl(message(res.ok ? res.code : undefined));
     if (tab) tab.location.href = url;
     else window.location.href = url;
-    setSent({ code: res.ok ? res.code : "", url });
+    setSent({ code: res.ok ? res.code : "", url, channel });
   };
 
   return (
@@ -184,7 +199,13 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
         </h2>
       </div>
 
-      <form onSubmit={submit} noValidate>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit("directa");
+        }}
+        noValidate
+      >
         {/* Barra de búsqueda */}
         <div ref={boxRef} className="relative z-20 -mt-6 px-3 sm:px-6">
           <div className="grid gap-3 rounded-xl bg-white p-3 shadow-lg ring-1 ring-black/10 md:grid-cols-[1.3fr_1fr]">
@@ -344,24 +365,46 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
           {sent ? (
             <div className="flex flex-col items-center justify-center rounded-xl bg-teal-light p-6 text-center" role="status">
               <CircleCheckBig className="size-12 text-teal" aria-hidden="true" />
-              <h3 className="mt-3 font-display text-3xl text-teal">¡Solicitud enviada!</h3>
+              <h3 className="mt-3 font-display text-3xl text-teal">
+                {sent.channel === "directa" ? "¡Reservación recibida!" : "¡Solicitud enviada!"}
+              </h3>
               {sent.code && (
                 <p className="mt-2 text-ink/80">
                   Tu folio es <strong className="font-heavy text-lg font-black text-rust">{sent.code}</strong>
                 </p>
               )}
-              <p className="mt-2 max-w-sm text-sm text-ink/75">
-                Abrimos WhatsApp con los datos de tu estancia. Envía el mensaje y recepción te confirmará la
-                disponibilidad.
-              </p>
-              <a
-                href={sent.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#25d366] px-5 py-3 font-bold text-white hover:brightness-95"
-              >
-                <WhatsAppIcon className="size-5" /> Abrir WhatsApp de nuevo
-              </a>
+              {sent.channel === "directa" ? (
+                <>
+                  <p className="mt-2 max-w-sm text-sm font-semibold text-ink/80">
+                    {room.name} · {checkIn && fmtShort(checkIn)} → {checkOut && fmtShort(checkOut)} · {mxn(total)} M.N.
+                  </p>
+                  <p className="mt-2 max-w-sm text-sm text-ink/75">
+                    Recepción revisará la disponibilidad y te contactará al <strong>{phone}</strong> para confirmar.
+                    Guarda tu folio para cualquier aclaración.
+                  </p>
+                  <a
+                    href={site.phone.href}
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg border-2 border-teal px-5 py-2.5 text-sm font-bold text-teal hover:bg-teal hover:text-white"
+                  >
+                    <Phone className="size-4" aria-hidden="true" /> ¿Dudas? {site.phone.display}
+                  </a>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 max-w-sm text-sm text-ink/75">
+                    Abrimos WhatsApp con los datos de tu estancia. Envía el mensaje y recepción te confirmará la
+                    disponibilidad.
+                  </p>
+                  <a
+                    href={sent.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#25d366] px-5 py-3 font-bold text-white hover:brightness-95"
+                  >
+                    <WhatsAppIcon className="size-5" /> Abrir WhatsApp de nuevo
+                  </a>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -370,7 +413,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
                 }}
                 className="mt-3 text-sm font-bold text-teal underline underline-offset-4"
               >
-                Hacer otra solicitud
+                Hacer otra reservación
               </button>
             </div>
           ) : (
@@ -466,22 +509,33 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
             )}
             <button
               type="submit"
-              disabled={sending}
+              disabled={sending !== null}
               className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-rust px-5 py-3 font-heavy text-base font-extrabold text-white shadow-md transition-colors hover:bg-rust-dark disabled:opacity-70"
             >
-              {sending ? <LoaderCircle className="size-5 animate-spin" /> : <WhatsAppIcon className="size-5" />}
-              {sending ? "Enviando…" : "Solicitar reservación"}
+              {sending === "directa" ? <LoaderCircle className="size-5 animate-spin" /> : <CalendarCheck className="size-5" />}
+              {sending === "directa" ? "Reservando…" : "Reservar ahora"}
             </button>
-            <a
-              href={site.phone.href}
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg border-2 border-teal px-5 py-2.5 text-sm font-bold text-teal hover:bg-teal hover:text-white"
-            >
-              <Phone className="size-4" aria-hidden="true" /> O llámanos al {site.phone.display}
-            </a>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => submit("whatsapp")}
+                disabled={sending !== null}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border-2 border-[#25d366] px-3 py-2.5 text-sm font-bold text-[#128c4a] hover:bg-[#25d366] hover:text-white disabled:opacity-60"
+              >
+                {sending === "whatsapp" ? <LoaderCircle className="size-4 animate-spin" /> : <WhatsAppIcon className="size-4" />}
+                Por WhatsApp
+              </button>
+              <a
+                href={site.phone.href}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border-2 border-teal px-3 py-2.5 text-sm font-bold text-teal hover:bg-teal hover:text-white"
+              >
+                <Phone className="size-4" aria-hidden="true" /> Llamar
+              </a>
+            </div>
             <p className="mt-3 flex items-start gap-1.5 text-xs text-ink/60">
               <Check className="mt-0.5 size-3.5 shrink-0 text-teal" aria-hidden="true" />
-              Tu solicitud se envía por WhatsApp a recepción. La reservación queda confirmada cuando el hotel
-              verifica disponibilidad. Precios en pesos mexicanos (M.N.).
+              Sin pago en línea: tu reservación queda registrada y recepción te confirma la disponibilidad por teléfono o
+              WhatsApp. Precios en pesos mexicanos (M.N.).
             </p>
           </div>
           )}

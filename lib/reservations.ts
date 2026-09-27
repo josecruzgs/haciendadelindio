@@ -5,12 +5,14 @@ import type { Room } from "@/data/rooms";
 
 export const STATUSES = ["pendiente", "confirmada", "completada", "cancelada"] as const;
 export type Status = (typeof STATUSES)[number];
+export type Channel = "directa" | "whatsapp" | "recepcion";
 
 export type Reservation = {
   id: number;
   code: string;
   status: Status;
   source: "web" | "admin";
+  channel: Channel;
   room: Room["slug"];
   rooms: number;
   adults: number;
@@ -32,7 +34,7 @@ export type Reservation = {
 export type Block = { id: number; room: Room["slug"] | null; start_date: string; end_date: string; reason: string | null };
 
 // Las fechas se leen como texto para evitar corrimientos de zona horaria.
-const COLS = `id, code, status, source, room, rooms, adults, children,
+const COLS = `id, code, status, source, channel, room, rooms, adults, children,
   check_in::text AS check_in, check_out::text AS check_out, nights, breakfast, total, promo_total,
   name, phone, notes, admin_notes, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
   to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at`;
@@ -43,11 +45,11 @@ export type NewReservation = Omit<Reservation, "id" | "code" | "created_at" | "u
 
 export async function insertReservation(r: NewReservation) {
   const [row] = await query<{ id: number }>(
-    `INSERT INTO reservations (status, source, room, rooms, adults, children, check_in, check_out, nights,
+    `INSERT INTO reservations (status, source, channel, room, rooms, adults, children, check_in, check_out, nights,
        breakfast, total, promo_total, name, phone, notes, admin_notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+     VALUES ($1,$2,$17,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
     [r.status, r.source, r.room, r.rooms, r.adults, r.children, r.check_in, r.check_out, r.nights,
-     r.breakfast, r.total, r.promo_total, r.name, r.phone, r.notes, r.admin_notes ?? null],
+     r.breakfast, r.total, r.promo_total, r.name, r.phone, r.notes, r.admin_notes ?? null, r.channel],
   );
   const [{ n }] = await query<{ n: number }>(
     `INSERT INTO counters (name, n) VALUES ('reservation', 1)

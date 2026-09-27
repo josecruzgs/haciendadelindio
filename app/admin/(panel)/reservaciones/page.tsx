@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { listReservations, STATUSES, type Status } from "@/lib/reservations";
-import { ago, Card, guestsLabel, money, roomLabel, stayLabel, StatusBadge, statusMeta } from "@/components/admin/ui";
+import { ago, Card, ChannelTag, guestsLabel, money, roomLabel, stayLabel, StatusBadge, statusMeta } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Reservaciones" };
 
@@ -85,7 +85,9 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
                     <Link href={`/admin/reservaciones/${r.id}`} className="font-bold text-teal after:absolute after:inset-0">
                       {r.code}
                     </Link>
-                    {r.source === "admin" && <span className="ml-1 text-[10px] text-ink/45 uppercase">manual</span>}
+                    <span className="mt-1 block">
+                      <ChannelTag channel={r.channel} />
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-bold">{r.name}</p>
