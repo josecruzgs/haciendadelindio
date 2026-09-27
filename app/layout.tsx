@@ -1,10 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Kaushan_Script, Montserrat, Oswald, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import WhatsAppButton from "@/components/WhatsAppButton";
-import CookieBanner from "@/components/CookieBanner";
 import { site } from "@/data/site";
 import { breakfastPrice, petsAllowed, rooms } from "@/data/rooms";
 import { amenities } from "@/components/AmenityList";
@@ -70,17 +66,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es-MX" className={`${oswald.variable} ${montserrat.variable} ${kaushan.variable} ${jakarta.variable}`}>
       <body className="font-sans antialiased">
-        <a
-          href="#contenido"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:font-bold focus:text-teal focus:shadow-lg"
-        >
-          Saltar al contenido principal
-        </a>
-        <Header />
-        <main id="contenido">{children}</main>
-        <Footer />
-        <WhatsAppButton />
-        <CookieBanner />
+        {children}
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </body>
     </html>

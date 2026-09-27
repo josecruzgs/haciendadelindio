@@ -15,6 +15,10 @@ const legacy: Array<[string, string]> = [
 ];
 
 const nextConfig: NextConfig = {
+  // PGlite carga WASM y archivos de datos en tiempo de ejecución
+  serverExternalPackages: ["@electric-sql/pglite"],
+  // Hay otro package-lock.json en la carpeta del usuario; fijar la raíz del proyecto
+  outputFileTracingRoot: process.cwd(),
   async redirects() {
     return legacy.map(([source, destination]) => ({ source, destination, permanent: true }));
   },

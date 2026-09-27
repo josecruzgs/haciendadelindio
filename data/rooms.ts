@@ -21,12 +21,6 @@ export const breakfastPrice = 75; // MXN por persona
 export const promoMinNights = 3;
 export const petsAllowed = false;
 
-/**
- * Fechas sin disponibilidad (YYYY-MM-DD). Aparecen tachadas en el calendario de reservación.
- * Se pueden conectar más adelante a un PMS / channel manager.
- */
-export const blockedDates: string[] = [];
-
 const metaTail =
   "Hacienda del Indio es un Hotel enfocado a brindar el descanso que tu y tu equipo de trabajo o familia necesitan.";
 

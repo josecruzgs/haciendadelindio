@@ -8,3 +8,6 @@ next-env.d.ts
 
 # Originales de diseño (pesados); el sitio usa las copias optimizadas en public/
 /identidad grafica/
+
+# Base de datos local (PGlite)
+/.data/

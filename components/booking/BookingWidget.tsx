@@ -2,20 +2,14 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BedDouble, CalendarDays, Check, Coffee, Minus, PawPrint, Phone, Plus, Users, X } from "lucide-react";
+import { BedDouble, CalendarDays, Check, CircleCheckBig, Coffee, LoaderCircle, Minus, PawPrint, Phone, Plus, Users, X } from "lucide-react";
 import RangeCalendar from "./RangeCalendar";
-import { addDays, fmtLong, fmtShort, nightsBetween, startOfDay } from "./dates";
+import { addDays, fmtLong, fmtShort, nightsBetween, startOfDay, toKey } from "./dates";
 import { WhatsAppIcon } from "../BrandIcons";
-import {
-  blockedDates,
-  breakfastPrice,
-  extraPersonFee,
-  mxn,
-  promoMinNights,
-  rooms,
-  type Room,
-} from "@/data/rooms";
+import { breakfastPrice, extraPersonFee, mxn, promoMinNights, rooms, type Room } from "@/data/rooms";
 import { site, whatsappUrl } from "@/data/site";
+import { quote } from "@/lib/pricing";
+import { createReservation } from "@/lib/actions/public";
 
 type Popover = "dates" | "guests" | null;
 const MAX_ROOMS = 10;
@@ -36,9 +30,25 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
   const [open, setOpen] = useState<Popover>(null);
   const [touched, setTouched] = useState(false);
   const [wide, setWide] = useState(false);
+  const [website, setWebsite] = useState(""); // campo trampa anti-spam
+  const [sending, setSending] = useState(false);
+  const [serverError, setServerError] = useState("");
+  const [sent, setSent] = useState<{ code: string; url: string } | null>(null);
+  const [availability, setAvailability] = useState<Record<string, string[]>>({});
 
   const boxRef = useRef<HTMLDivElement>(null);
-  const blocked = useMemo(() => new Set(blockedDates), []);
+  // Noches sin disponibilidad: bloqueos generales + los de la habitación elegida
+  const blocked = useMemo(
+    () => new Set([...(availability.all ?? []), ...(availability[slug] ?? [])]),
+    [availability, slug],
+  );
+
+  useEffect(() => {
+    fetch("/api/disponibilidad")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then(setAvailability)
+      .catch(() => {});
+  }, []);
 
   // Fechas por defecto (hoy → mañana) solo en cliente para evitar desfaces de zona horaria en SSR
   useEffect(() => {
@@ -79,13 +89,12 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
   }, [capacity, guests, adults, roomCount]);
 
   const nights = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
-  const extraGuests = Math.max(0, guests - room.includedGuests * roomCount);
-  const breakfastTotal = breakfast ? guests * breakfastPrice * nights : 0;
-  const extrasTotal = extraGuests * extraPersonFee * nights;
-  const lodging = room.price * roomCount * nights;
-  const total = lodging + extrasTotal + breakfastTotal;
-  const promoEligible = nights >= promoMinNights;
-  const promoTotal = room.promoPrice * roomCount * nights + extrasTotal + breakfastTotal;
+  const { extraGuests, breakfastTotal, extrasTotal, lodging, total, promoEligible, promoTotal } = quote(room, {
+    nights,
+    roomCount,
+    guests,
+    breakfast,
+  });
 
   const phoneDigits = phone.replace(/\D/g, "");
   const errors = {
@@ -99,9 +108,9 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
     children ? `, ${children} niño${children !== 1 ? "s" : ""}` : ""
   }`;
 
-  const message = () =>
+  const message = (code?: string) =>
     [
-      "Hola, quiero solicitar una reservación en Hacienda del Indio:",
+      `Hola, quiero solicitar una reservación en Hacienda del Indio${code ? ` (folio ${code})` : ""}:`,
       `• Habitación: ${room.name}${roomCount > 1 ? ` (x${roomCount})` : ""}`,
       `• Entrada: ${checkIn ? fmtLong(checkIn) : "-"}`,
       `• Salida: ${checkOut ? fmtLong(checkOut) : "-"} (${nights} noche${nights !== 1 ? "s" : ""})`,
@@ -117,11 +126,41 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       .filter((l, i, arr) => l !== "" || (i > 0 && arr[i - 1] !== ""))
       .join("\n");
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (!valid) return;
-    window.open(whatsappUrl(message()), "_blank", "noopener,noreferrer");
+    setServerError("");
+    if (!valid || sending || !checkIn || !checkOut) return;
+
+    // Abrir la pestaña de WhatsApp dentro del clic (evita bloqueadores) y llenarla al guardar
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    setSending(true);
+    const res = await createReservation({
+      room: room.slug,
+      rooms: roomCount,
+      adults,
+      children,
+      checkIn: toKey(checkIn),
+      checkOut: toKey(checkOut),
+      breakfast,
+      name,
+      phone,
+      notes,
+      website,
+    }).catch(() => ({ ok: false as const, error: "Sin conexión.", retryable: true }));
+    setSending(false);
+
+    if (!res.ok && !res.retryable) {
+      tab?.close();
+      setServerError(res.error);
+      return;
+    }
+    // Si falló el guardado por un error técnico, la solicitud igual llega por WhatsApp
+    const url = whatsappUrl(message(res.ok ? res.code : undefined));
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+    setSent({ code: res.ok ? res.code : "", url });
   };
 
   return (
@@ -302,6 +341,39 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
             </ul>
           </div>
 
+          {sent ? (
+            <div className="flex flex-col items-center justify-center rounded-xl bg-teal-light p-6 text-center" role="status">
+              <CircleCheckBig className="size-12 text-teal" aria-hidden="true" />
+              <h3 className="mt-3 font-display text-3xl text-teal">¡Solicitud enviada!</h3>
+              {sent.code && (
+                <p className="mt-2 text-ink/80">
+                  Tu folio es <strong className="font-heavy text-lg font-black text-rust">{sent.code}</strong>
+                </p>
+              )}
+              <p className="mt-2 max-w-sm text-sm text-ink/75">
+                Abrimos WhatsApp con los datos de tu estancia. Envía el mensaje y recepción te confirmará la
+                disponibilidad.
+              </p>
+              <a
+                href={sent.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#25d366] px-5 py-3 font-bold text-white hover:brightness-95"
+              >
+                <WhatsAppIcon className="size-5" /> Abrir WhatsApp de nuevo
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setSent(null);
+                  setTouched(false);
+                }}
+                className="mt-3 text-sm font-bold text-teal underline underline-offset-4"
+              >
+                Hacer otra solicitud
+              </button>
+            </div>
+          ) : (
           <div className="flex flex-col">
             <h3 className="font-display text-2xl text-teal">Resumen de tu estancia</h3>
             {nights > 0 ? (
@@ -375,12 +447,30 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
               />
             </Field>
 
+            {/* Campo trampa: invisible para personas */}
+            <input
+              type="text"
+              name="website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="absolute -left-[9999px] h-0 w-0 opacity-0"
+            />
+
+            {serverError && (
+              <p className="mt-4 rounded-lg bg-rust/10 px-3 py-2 text-sm font-semibold text-rust-dark" role="alert">
+                {serverError}
+              </p>
+            )}
             <button
               type="submit"
-              className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-rust px-5 py-3 font-heavy text-base font-extrabold text-white shadow-md transition-colors hover:bg-rust-dark"
+              disabled={sending}
+              className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-rust px-5 py-3 font-heavy text-base font-extrabold text-white shadow-md transition-colors hover:bg-rust-dark disabled:opacity-70"
             >
-              <WhatsAppIcon className="size-5" />
-              Solicitar reservación
+              {sending ? <LoaderCircle className="size-5 animate-spin" /> : <WhatsAppIcon className="size-5" />}
+              {sending ? "Enviando…" : "Solicitar reservación"}
             </button>
             <a
               href={site.phone.href}
@@ -394,6 +484,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
               verifica disponibilidad. Precios en pesos mexicanos (M.N.).
             </p>
           </div>
+          )}
         </div>
       </form>
     </div>
