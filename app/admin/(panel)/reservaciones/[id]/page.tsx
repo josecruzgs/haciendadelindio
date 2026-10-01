@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { fmtKeyCap } from "@/lib/dates";
 import { balanceDue, getReservation, refundable } from "@/lib/reservations";
 import { advanceLabel, computeCharge, getSettings } from "@/lib/settings";
+import { getPricing } from "@/lib/catalog";
 import { payUrl, siteUrl } from "@/lib/stripe";
 import { needsPayLink, renderTemplate, reservationVars } from "@/lib/templates";
 import { getRoom } from "@/data/rooms";
@@ -25,7 +26,7 @@ export default async function ReservationDetail({ params }: { params: Promise<{ 
   const r = Number.isFinite(id) ? await getReservation(id) : null;
   if (!r) notFound();
 
-  const { advance, templates } = await getSettings();
+  const [{ advance, templates }, pricing] = await Promise.all([getSettings(), getPricing()]);
   const room = getRoom(r.room);
   const long = { weekday: "long", day: "numeric", month: "long", year: "numeric" } as const;
   const reviewing = (r.status === "pendiente" || r.status === "por_pagar") && !r.paid_at;
@@ -39,7 +40,7 @@ export default async function ReservationDetail({ params }: { params: Promise<{ 
   // (sin disponibilidad y recordatorio solo mientras se espera el pago)
   const own = ["liga_pago", "cancelacion", ...(r.status !== "por_pagar" ? ["sin_disponibilidad", "recordatorio_pago"] : [])];
   const quick = templates.filter((t) => !own.includes(t.id) && (!needsPayLink(t) || (payLink && r.status === "por_pagar")));
-  const preview = computeCharge(advance, r);
+  const preview = computeCharge(advance, r, pricing.promo.enabled);
   const canRefund = refundable(r);
 
   const rows: [string, React.ReactNode][] = [
@@ -51,7 +52,7 @@ export default async function ReservationDetail({ params }: { params: Promise<{ 
     ["Desayunos", r.breakfasts ? `${r.breakfasts} por día (${r.breakfasts * r.nights} en total)` : "No"],
     ["Total estimado", <strong key="t" className="font-heavy text-lg font-black text-rust">{money(r.total)} M.N.</strong>],
   ];
-  if (r.promo_total) rows.push(["Tarifa promo (pago adelantado)", money(r.promo_total)]);
+  if (r.promo_total) rows.push(["Total con promo (pago en línea)", money(r.promo_total)]);
   if (r.charge_total != null && r.charge_total !== r.total) rows.push(["Total acordado", `${money(r.charge_total)} M.N.`]);
   if (r.amount_due != null) rows.push(["Cobro en línea", `${money(r.amount_due)} M.N.`]);
   if (r.paid_at) {

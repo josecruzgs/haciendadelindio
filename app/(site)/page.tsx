@@ -5,10 +5,13 @@ import BookingWidget from "@/components/booking/BookingWidget";
 import RoomCard from "@/components/RoomCard";
 import MapEmbed from "@/components/MapEmbed";
 import { WhatsAppIcon } from "@/components/BrandIcons";
-import { rooms } from "@/data/rooms";
+import { getPricing } from "@/lib/catalog";
+import { withPricing } from "@/data/rooms";
 import { site, whatsappUrl } from "@/data/site";
 
-export default function Home() {
+export default async function Home() {
+  const pricing = await getPricing();
+  const rooms = withPricing(pricing);
   return (
     <>
       {/* 1 · Promo dividida (como en home.jpg) */}
@@ -65,7 +68,7 @@ export default function Home() {
       <section id="reservar" className="scroll-mt-16 bg-[linear-gradient(var(--color-orange)_0_62%,var(--color-sand)_62%)]">
         <div className="tipi-divider" aria-hidden="true" />
         <div className="mx-auto max-w-4xl px-3 pt-10 pb-14 sm:px-4 md:pt-14">
-          <BookingWidget />
+          <BookingWidget pricing={pricing} />
         </div>
       </section>
 

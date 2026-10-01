@@ -56,12 +56,10 @@ export default function AdvanceForm({ initial }: { initial: AdvanceSettings }) {
         </label>
       )}
 
-      <label className="flex items-start gap-2 text-sm text-ink/75">
-        <input name="applyPromo" type="checkbox" defaultChecked={initial.applyPromo} className="mt-0.5 size-4 accent-teal" />
-        <span>
-          Usar la <strong>tarifa promo</strong> (3+ noches) como total cuando el huésped paga por adelantado
-        </span>
-      </label>
+      <p className="text-xs text-ink/55">
+        Si la reservación califica para la promoción por pago anticipado, el anticipo se calcula sobre el total con
+        descuento (ver <a href="#precios" className="font-bold text-teal underline">Precios y promoción</a>).
+      </p>
 
       <p className="rounded-lg bg-sand-light px-3 py-2 text-sm text-ink/75">
         Ejemplo: en una reservación de {mxn(EXAMPLE)} se cobran <strong>{mxn(due)}</strong> con la liga

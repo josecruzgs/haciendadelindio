@@ -43,7 +43,7 @@ Las tablas se crean solas en la primera conexión.
      habitaciones.
 3. El huésped abre la liga, revisa su estancia y paga con **Stripe Checkout**. Al pagar, la reservación pasa
    sola a **Confirmada** (vía webhook y también al regresar a la página de pago). Cuánto se cobra en línea
-   (pago total, un porcentaje o un monto fijo, y si aplica la tarifa promo) se define en **`/admin/ajustes`**;
+   (pago total, un porcentaje o un monto fijo; con la promo aplicada si califica) se define en **`/admin/ajustes`**;
    el saldo se paga en recepción.
 4. Cada reservación tiene botones de **Responder por WhatsApp** con mensajes prellenados (recordatorio de pago,
    confirmación, datos de llegada…). Los textos se editan y se agregan en `/admin/ajustes` con variables como
@@ -51,9 +51,12 @@ Las tablas se crean solas en la primera conexión.
 5. **Cancelar** solo se hace a petición del cliente, desde el detalle: invalida la liga de pago, permite
    reembolsar por Stripe el total, una parte o nada (y reembolsar después), y abre WhatsApp con el mensaje de
    cancelación. Los reembolsos hechos directo en el Dashboard de Stripe se sincronizan por webhook.
-6. Recepción puede además confirmar sin pago en línea (p. ej. pagó en recepción), marcar como **completada** y
+6. Los **precios** (habitaciones, desayuno y persona adicional) y la **promoción por pago anticipado** se editan en
+   `/admin/ajustes`: activarla o no, noches mínimas y descuento (precio promo por habitación o % sobre la tarifa).
+   La promo se cobra al pagar en línea con la liga de Stripe; el sitio y las cotizaciones usan siempre lo vigente. El panel se abre desde el link «Interno» del footer.
+7. Recepción puede además confirmar sin pago en línea (p. ej. pagó en recepción), marcar como **completada** y
    agregar notas internas.
-7. En `/admin/disponibilidad` se bloquean noches (todas las habitaciones o un tipo); el calendario público las
+8. En `/admin/disponibilidad` se bloquean noches (todas las habitaciones o un tipo); el calendario público las
    muestra tachadas y el servidor rechaza solicitudes en esas fechas.
 
 ### Configurar Stripe

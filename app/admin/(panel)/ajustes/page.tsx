@@ -2,15 +2,17 @@ import type { Metadata } from "next";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
+import { getPricing } from "@/lib/catalog";
 import { Card } from "@/components/admin/ui";
 import AdvanceForm from "./AdvanceForm";
+import PricesForm from "./PricesForm";
 import TemplatesForm from "./TemplatesForm";
 
 export const metadata: Metadata = { title: "Ajustes" };
 
 export default async function SettingsPage() {
   await requireAdmin();
-  const { advance, templates } = await getSettings();
+  const [{ advance, templates }, pricing] = await Promise.all([getSettings(), getPricing()]);
   const key = process.env.STRIPE_SECRET_KEY ?? "";
   const checks = [
     { ok: Boolean(key), label: key ? `Llave de Stripe configurada (${key.startsWith("sk_live") ? "modo real" : "modo de prueba"})` : "Falta STRIPE_SECRET_KEY" },
@@ -22,11 +24,20 @@ export default async function SettingsPage() {
     <div className="space-y-5">
       <div>
         <h1 className="font-display text-4xl text-teal">Ajustes</h1>
-        <p className="max-w-2xl text-sm text-ink/65">Cobro en línea con Stripe y respuestas de WhatsApp para los huéspedes.</p>
+        <p className="max-w-2xl text-sm text-ink/65">Precios, cobro en línea con Stripe y respuestas de WhatsApp para los huéspedes.</p>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_1.6fr]">
         <div className="space-y-5">
+          <Card>
+            <h2 id="precios" className="scroll-mt-4 font-display text-2xl text-teal">
+              Precios y promoción
+            </h2>
+            <p className="mt-1 text-sm text-ink/65">
+              Tarifas que se muestran en el sitio y con las que se cotiza cada reservación, y el descuento por pagar en línea.
+            </p>
+            <PricesForm pricing={pricing} />
+          </Card>
           <Card>
             <h2 className="font-display text-2xl text-teal">Pago por adelantado</h2>
             <p className="mt-1 text-sm text-ink/65">

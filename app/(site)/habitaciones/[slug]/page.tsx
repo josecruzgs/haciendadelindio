@@ -5,15 +5,13 @@ import { ArrowLeft, BedDouble, CalendarCheck, PawPrint, Users } from "lucide-rea
 import Gallery from "@/components/Gallery";
 import AmenityList from "@/components/AmenityList";
 import RoomCard from "@/components/RoomCard";
-import { extraPersonFee, getRoom, mxn, promoMinNights, rooms } from "@/data/rooms";
+import { getRoom, mxn, promoLabel, withPricing } from "@/data/rooms";
+import { getPricing } from "@/lib/catalog";
 
 type Params = { slug: string };
 
-export function generateStaticParams() {
-  return rooms.map((r) => ({ slug: r.slug }));
-}
-
-export const dynamicParams = false;
+// Dinámica: los precios se editan desde el panel. Los slugs desconocidos dan 404 abajo.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const room = getRoom((await params).slug);
@@ -27,9 +25,12 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 }
 
 export default async function RoomPage({ params }: { params: Promise<Params> }) {
-  const room = getRoom((await params).slug);
+  const slug = (await params).slug;
+  const pricing = await getPricing();
+  const priced = withPricing(pricing);
+  const room = priced.find((r) => r.slug === slug);
   if (!room) notFound();
-  const others = rooms.filter((r) => r.slug !== room.slug);
+  const others = priced.filter((r) => r.slug !== room.slug);
 
   return (
     <>
@@ -58,12 +59,14 @@ export default async function RoomPage({ params }: { params: Promise<Params> }) 
                   {mxn(room.price)} <span className="text-base font-bold text-ink/60">M.N. por noche</span>
                 </p>
                 <p className="mt-1 text-sm text-ink/75">
-                  Persona adicional: +{mxn(extraPersonFee)} M.N. (sobre el monto final)
+                  Persona adicional: +{mxn(pricing.extraPersonFee)} M.N. (sobre el monto final)
                 </p>
-                <p className="mt-3 rounded-lg bg-orange/15 px-3 py-2 text-sm">
-                  <strong className="text-rust-dark">Promo {promoMinNights}+ noches:</strong> {mxn(room.promoPrice)} por noche
-                  al pagar por adelantado. Aplican restricciones.
-                </p>
+                {promoLabel(pricing) && room.promoPrice < room.price && (
+                  <p className="mt-3 rounded-lg bg-orange/15 px-3 py-2 text-sm">
+                    <strong className="text-rust-dark">{promoLabel(pricing)}:</strong> {mxn(room.promoPrice)} por noche
+                    pagando en línea por adelantado. Aplican restricciones.
+                  </p>
+                )}
                 <Link
                   href={`/reservar?habitacion=${room.slug}`}
                   className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-rust px-5 py-3 font-heavy text-lg font-extrabold text-white shadow hover:bg-rust-dark"

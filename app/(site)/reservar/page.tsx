@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Clock, Phone, ShieldCheck } from "lucide-react";
 import BookingWidget from "@/components/booking/BookingWidget";
 import { WhatsAppIcon } from "@/components/BrandIcons";
-import { breakfastPrice, extraPersonFee, getRoom, mxn, promoMinNights, rooms, type Room } from "@/data/rooms";
+import { getRoom, mxn, withPricing, type Room } from "@/data/rooms";
+import { getPricing } from "@/lib/catalog";
 import { site } from "@/data/site";
 
 export const metadata: Metadata = {
@@ -20,6 +21,9 @@ export default async function ReservarPage({
   const { habitacion } = await searchParams;
   const initial: Room["slug"] = getRoom(habitacion ?? "")?.slug ?? "doble";
 
+  const pricing = await getPricing();
+  const { breakfastPrice, extraPersonFee } = pricing;
+  const rooms = withPricing(pricing);
   const promoList = rooms.map((r) => `${r.cardName} ${mxn(r.promoPrice)}`).join(", ");
   const faqs = [
     {
@@ -28,7 +32,9 @@ export default async function ReservarPage({
     },
     {
       q: "¿Hay tarifa especial por varias noches?",
-      a: `Sí. Al pagar ${promoMinNights} noches o más por adelantado aplica la tarifa promo por noche (${promoList}). Aplican restricciones.`,
+      a: pricing.promo.enabled
+        ? `Sí. Al reservar ${pricing.promo.minNights} noches o más y pagar en línea por adelantado aplica la tarifa promo por noche (${promoList}). Aplican restricciones.`
+        : "Por el momento no hay promociones activas. Escríbenos por WhatsApp para estancias largas o grupos.",
     },
     {
       q: "¿Cuánto cuesta una persona adicional o el desayuno?",
@@ -43,7 +49,7 @@ export default async function ReservarPage({
         <div className="tipi-divider" aria-hidden="true" />
         <div className="mx-auto max-w-4xl px-3 pt-8 pb-14 sm:px-4">
           <h1 className="mb-6 text-center font-display text-4xl text-teal-dark md:text-5xl">Reservaciones</h1>
-          <BookingWidget key={initial} initialRoom={initial} />
+          <BookingWidget key={initial} initialRoom={initial} pricing={pricing} />
         </div>
       </section>
 

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import RoomCard from "@/components/RoomCard";
-import { rooms } from "@/data/rooms";
+import { getRooms } from "@/lib/catalog";
 import { site } from "@/data/site";
 
 export const metadata: Metadata = {
@@ -9,7 +9,8 @@ export const metadata: Metadata = {
   alternates: { canonical: "/habitaciones" },
 };
 
-export default function HabitacionesPage() {
+export default async function HabitacionesPage() {
+  const rooms = await getRooms();
   return (
     <section className="bg-sand-light py-14">
       <div className="mx-auto max-w-6xl px-4">

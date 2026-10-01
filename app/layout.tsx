@@ -2,7 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Kaushan_Script, Montserrat, Oswald, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { site } from "@/data/site";
-import { breakfastPrice, petsAllowed, rooms } from "@/data/rooms";
+import { petsAllowed, withPricing, type Pricing } from "@/data/rooms";
+import { getPricing } from "@/lib/catalog";
 import { amenities } from "@/components/AmenityList";
 
 const oswald = Oswald({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-oswald" });
@@ -26,8 +27,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: "#22635f" };
 
-const prices = rooms.map((r) => r.price);
-const jsonLd = {
+function jsonLd(pricing: Pricing) {
+  const rooms = withPricing(pricing);
+  const prices = rooms.map((r) => r.price);
+  return {
   "@context": "https://schema.org",
   "@type": ["Hotel", "LodgingBusiness"],
   name: site.name,
@@ -57,17 +60,19 @@ const jsonLd = {
       priceCurrency: "MXN",
       url: `${site.url}/habitaciones/${r.slug}`,
     })),
-    { "@type": "Offer", name: "Desayuno por persona", price: breakfastPrice, priceCurrency: "MXN" },
+    { "@type": "Offer", name: "Desayuno por persona", price: pricing.breakfastPrice, priceCurrency: "MXN" },
   ],
   sameAs: [site.facebook.url],
-};
+  };
+}
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const pricing = await getPricing();
   return (
     <html lang="es-MX" className={`${oswald.variable} ${montserrat.variable} ${kaushan.variable} ${jakarta.variable}`}>
       <body className="font-sans antialiased">
         {children}
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(pricing)) }} />
       </body>
     </html>
   );

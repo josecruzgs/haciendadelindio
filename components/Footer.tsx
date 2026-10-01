@@ -113,7 +113,13 @@ export default function Footer() {
         </ul>
 
         <div className="mt-10 flex flex-col items-center justify-between gap-3 text-sm text-cream/75 sm:flex-row">
-          <p>© Todos los derechos {site.owner}. {new Date().getFullYear()}.</p>
+          <p>
+            © Todos los derechos {site.owner}. {new Date().getFullYear()}.
+            <span className="mx-2 text-cream/40" aria-hidden="true">·</span>
+            <Link href="/admin" rel="nofollow" className="underline-offset-4 hover:text-white hover:underline">
+              Interno
+            </Link>
+          </p>
           <Image src="/images/isotipo-blanco.png" alt="" width={600} height={491} className="h-10 w-auto opacity-80" />
         </div>
       </div>

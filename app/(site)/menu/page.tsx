@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { ConciergeBell, Coffee, Download } from "lucide-react";
 import { WhatsAppIcon } from "@/components/BrandIcons";
-import { breakfastPrice, mxn } from "@/data/rooms";
+import { mxn } from "@/data/rooms";
+import { getPricing } from "@/lib/catalog";
 import { site, whatsappUrl } from "@/data/site";
 
 export const metadata: Metadata = {
@@ -20,7 +21,8 @@ const dishes = [
   { src: "/images/comida-burritos.jpg", alt: "Burritos con arroz, frijoles y salsa" },
 ];
 
-export default function MenuPage() {
+export default async function MenuPage() {
+  const { breakfastPrice } = await getPricing();
   return (
     <>
       <section className="bg-sand-light py-14">

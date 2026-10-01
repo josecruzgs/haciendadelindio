@@ -1,4 +1,4 @@
-import { breakfastPrice, extraPersonFee, promoMinNights, rooms, type Room } from "@/data/rooms";
+import { DEFAULT_PRICING, rooms, type Pricing, type Room } from "@/data/rooms";
 
 export type Quote = {
   nights: number;
@@ -16,7 +16,10 @@ export type Quote = {
 export function quote(
   room: Room,
   opts: { nights: number; roomCount: number; guests: number; breakfasts: number },
+  /** Desayuno, persona adicional y promoción vigentes; el precio de la habitación viene en `room` (de withPricing). */
+  fees: Pick<Pricing, "breakfastPrice" | "extraPersonFee" | "promo"> = DEFAULT_PRICING,
 ): Quote {
+  const { breakfastPrice, extraPersonFee, promo } = fees;
   const { nights, roomCount, guests } = opts;
   // Desayunos: de 0 a un desayuno por huésped, por día
   const breakfasts = Math.max(0, Math.min(guests, Math.floor(opts.breakfasts) || 0));
@@ -24,7 +27,8 @@ export function quote(
   const extrasTotal = extraGuests * extraPersonFee * nights;
   const breakfastTotal = breakfasts * breakfastPrice * nights;
   const lodging = room.price * roomCount * nights;
-  const promoEligible = nights >= promoMinNights;
+  // La promo aplica al pagar en línea por adelantado y alcanzar las noches mínimas
+  const promoEligible = promo.enabled && nights >= promo.minNights && room.promoPrice < room.price;
   return {
     nights,
     lodging,

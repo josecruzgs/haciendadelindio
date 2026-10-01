@@ -1,3 +1,5 @@
+import { whatsappDigits } from "./phone";
+
 export const site = {
   name: "Hacienda del Indio Hotel",
   shortName: "Hacienda del Indio",
@@ -45,9 +47,7 @@ export function whatsappUrl(text?: string) {
   return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }
 
-/** Liga de WhatsApp hacia el teléfono de un huésped (10 dígitos → lada 52). */
+/** Liga de WhatsApp hacia el teléfono de un huésped (+52 México, +1 EE. UU.; 10 dígitos sin lada → México). */
 export function whatsappTo(phone: string, text: string) {
-  let digits = phone.replace(/\D/g, "");
-  if (digits.length === 10) digits = `52${digits}`;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+  return `https://wa.me/${whatsappDigits(phone)}?text=${encodeURIComponent(text)}`;
 }

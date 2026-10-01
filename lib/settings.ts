@@ -7,13 +7,11 @@ export type AdvanceSettings = {
   /** total = 100 %; porcentaje = `value` %; fijo = `value` pesos (sin pasar del total). */
   mode: "total" | "porcentaje" | "fijo";
   value: number;
-  /** Usar la tarifa promo (3+ noches) como total cuando se paga por adelantado. */
-  applyPromo: boolean;
 };
 
 export type Settings = { advance: AdvanceSettings; templates: Template[] };
 
-export const DEFAULT_ADVANCE: AdvanceSettings = { mode: "total", value: 100, applyPromo: true };
+export const DEFAULT_ADVANCE: AdvanceSettings = { mode: "total", value: 100 };
 
 /** Stripe no acepta cobros menores a $10 MXN. */
 export const STRIPE_MIN_MXN = 10;
@@ -49,9 +47,12 @@ export async function saveSetting(key: "advance" | "templates", value: unknown) 
   );
 }
 
-/** Total a cobrar de la estancia y monto del pago en línea según los ajustes. */
-export function computeCharge(a: AdvanceSettings, r: { total: number; promo_total: number | null }) {
-  const total = a.applyPromo && r.promo_total != null ? r.promo_total : r.total;
+/**
+ * Total a cobrar de la estancia y monto del pago en línea según los ajustes.
+ * Si la reservación califica para la promo y la promo sigue activa, el total es el precio promo (pago anticipado).
+ */
+export function computeCharge(a: AdvanceSettings, r: { total: number; promo_total: number | null }, promoEnabled: boolean) {
+  const total = promoEnabled && r.promo_total != null ? r.promo_total : r.total;
   let due = total;
   if (a.mode === "porcentaje") due = Math.round((total * Math.min(100, Math.max(1, a.value))) / 100);
   else if (a.mode === "fijo") due = Math.min(total, Math.max(0, Math.round(a.value)));

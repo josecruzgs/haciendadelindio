@@ -1,14 +1,19 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { createManualReservation } from "@/lib/actions/admin";
-import { mxn, rooms } from "@/data/rooms";
+import { mxn, withPricing, type Pricing } from "@/data/rooms";
 import { quote } from "@/lib/pricing";
+import PhoneInput from "@/components/PhoneInput";
+import type { PhoneCountry } from "@/data/phone";
 
 const input = "mt-1 w-full rounded-lg border-2 border-black/10 px-3 py-2 text-sm outline-none focus:border-teal";
 const label = "block text-sm font-semibold text-ink/75";
 
-export default function NewReservationForm({ today, tomorrow }: { today: string; tomorrow: string }) {
+export default function NewReservationForm({ today, tomorrow, pricing }: { today: string; tomorrow: string; pricing: Pricing }) {
+  const rooms = useMemo(() => withPricing(pricing), [pricing]);
+  const [phone, setPhone] = useState("");
+  const [phoneCountry, setPhoneCountry] = useState<PhoneCountry>("MX");
   const [state, action, pending] = useActionState(createManualReservation, undefined);
   const [f, setF] = useState({ room: "doble", rooms: 1, adults: 2, children: 0, check_in: today, check_out: tomorrow, breakfasts: 0 });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -16,7 +21,7 @@ export default function NewReservationForm({ today, tomorrow }: { today: string;
 
   const room = rooms.find((r) => r.slug === f.room)!;
   const nights = Math.round((Date.parse(f.check_out) - Date.parse(f.check_in)) / 86_400_000);
-  const q = nights > 0 ? quote(room, { nights, roomCount: f.rooms || 1, guests: f.adults + f.children, breakfasts: f.breakfasts }) : null;
+  const q = nights > 0 ? quote(room, { nights, roomCount: f.rooms || 1, guests: f.adults + f.children, breakfasts: f.breakfasts }, pricing) : null;
 
   return (
     <form action={action} className="grid gap-4 sm:grid-cols-2">
@@ -54,10 +59,12 @@ export default function NewReservationForm({ today, tomorrow }: { today: string;
         Nombre del huésped
         <input name="name" required className={input} />
       </label>
-      <label className={label}>
+      <div className={label} role="group" aria-label="Teléfono">
         Teléfono
-        <input name="phone" type="tel" className={input} />
-      </label>
+        <div className="mt-1 rounded-lg border-2 border-black/10 px-3 py-2 text-sm font-normal focus-within:border-teal">
+          <PhoneInput country={phoneCountry} value={phone} onCountry={setPhoneCountry} onChange={setPhone} name="phone" />
+        </div>
+      </div>
       <label className={label}>
         Desayunos por día
         <input

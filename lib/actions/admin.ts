@@ -7,7 +7,9 @@ import { randomBytes } from "node:crypto";
 import { checkCredentials, createSession, destroySession, rateLimited, requireAdmin } from "../auth";
 import { isDateKey, nightsBetweenKeys } from "../dates";
 import { quote, roomBySlug } from "../pricing";
-import { mxn } from "@/data/rooms";
+import { getPricedRoom, getPricing, savePricing } from "../catalog";
+import { normalizePhone, type PhoneCountry } from "@/data/phone";
+import { DEFAULT_PRICING, mxn, type Pricing } from "@/data/rooms";
 import { whatsappTo } from "@/data/site";
 import { computeCharge, getSettings, saveSetting, STRIPE_MIN_MXN, type AdvanceSettings } from "../settings";
 import { expireOpenSession, payUrl, refundPayment, siteUrl, stripeEnabled } from "../stripe";
@@ -72,8 +74,8 @@ export async function sendPaymentLink(id: number): Promise<PaymentLinkResult> {
   if (!stripeEnabled()) return { ok: false, error: "Configura STRIPE_SECRET_KEY en las variables de entorno para cobrar en línea." };
   const current = await getReservation(id);
   if (!current) return { ok: false, error: "No encontramos la reservación." };
-  const { advance, templates } = await getSettings();
-  const amounts = computeCharge(advance, current);
+  const [{ advance, templates }, pricing] = await Promise.all([getSettings(), getPricing()]);
+  const amounts = computeCharge(advance, current, pricing.promo.enabled);
   if (amounts.due < STRIPE_MIN_MXN) {
     return { ok: false, error: `El cobro en línea sería de ${mxn(amounts.due)}; Stripe pide mínimo ${mxn(STRIPE_MIN_MXN)}. Revisa Ajustes.` };
   }
@@ -145,7 +147,7 @@ export async function saveAdminNotes(id: number, _: FormState, fd: FormData): Pr
 
 export async function createManualReservation(_: FormState, fd: FormData): Promise<FormState> {
   await requireAdmin();
-  const room = roomBySlug(str(fd, "room"));
+  const room = await getPricedRoom(str(fd, "room"));
   const checkIn = str(fd, "check_in");
   const checkOut = str(fd, "check_out");
   const rooms = num(fd, "rooms");
@@ -154,7 +156,8 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
   const breakfasts = Math.max(0, num(fd, "breakfasts") || 0);
   const status = str(fd, "status") as Status;
   const name = str(fd, "name").slice(0, 120);
-  const phone = str(fd, "phone").slice(0, 30);
+  const rawPhone = str(fd, "phone").slice(0, 30);
+  const phone = rawPhone ? normalizePhone(str(fd, "phone_country") as PhoneCountry, rawPhone) : "";
 
   if (!room) return { error: "Elige una habitación." };
   if (!isDateKey(checkIn) || !isDateKey(checkOut)) return { error: "Fechas no válidas." };
@@ -165,9 +168,10 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
     return { error: `Máximo ${room.maxGuests * rooms} huéspedes para ${rooms} habitación(es) ${room.cardName.toLowerCase()}.` };
   }
   if (name.length < 2) return { error: "Escribe el nombre del huésped." };
+  if (phone === null) return { error: "El teléfono debe tener 10 dígitos (México o Estados Unidos)." };
   if (!STATUSES.includes(status)) return { error: "Estado no válido." };
 
-  const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts });
+  const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts }, await getPricing());
   const customTotal = num(fd, "total");
   const { id } = await insertReservation({
     status,
@@ -226,7 +230,6 @@ export async function saveAdvanceSettings(_: FormState, fd: FormData): Promise<F
   await saveSetting("advance", {
     mode,
     value: mode === "total" ? 100 : Math.round(value),
-    applyPromo: fd.get("applyPromo") === "on",
   } satisfies AdvanceSettings);
   revalidatePath("/admin", "layout");
   return { ok: "Ajustes de pago guardados. Aplican a las ligas que envíes desde ahora." };
@@ -256,4 +259,40 @@ export async function saveTemplates(_: FormState, fd: FormData): Promise<FormSta
   await saveSetting("templates", clean);
   revalidatePath("/admin", "layout");
   return { ok: "Respuestas guardadas." };
+}
+
+export async function savePrices(_: FormState, fd: FormData): Promise<FormState> {
+  await requireAdmin();
+  const money = (k: string) => {
+    const n = Number(str(fd, k));
+    return Number.isInteger(n) && n >= 0 && n <= 100_000 ? n : NaN;
+  };
+  const rooms = {} as Pricing["rooms"];
+  for (const slug of Object.keys(DEFAULT_PRICING.rooms) as (keyof Pricing["rooms"])[]) {
+    const price = money(`${slug}_price`);
+    const promoPrice = money(`${slug}_promo`);
+    if (!(price > 0) || !(promoPrice > 0)) return { error: "Escribe precios enteros mayores a 0 para todas las habitaciones." };
+    rooms[slug] = { price, promoPrice };
+  }
+  const breakfastPrice = money("breakfastPrice");
+  const extraPersonFee = money("extraPersonFee");
+  if (Number.isNaN(breakfastPrice) || Number.isNaN(extraPersonFee)) return { error: "Revisa el precio del desayuno y de la persona adicional." };
+
+  const promoType = str(fd, "promo_type") === "porcentaje" ? "porcentaje" : "precio";
+  const minNights = Number(str(fd, "promo_min_nights"));
+  const percent = Number(str(fd, "promo_percent") || 0);
+  if (!(Number.isInteger(minNights) && minNights >= 1 && minNights <= 30)) return { error: "Las noches mínimas de la promo deben ser de 1 a 30." };
+  if (promoType === "porcentaje" && !(percent >= 1 && percent <= 90)) return { error: "El descuento de la promo debe ser de 1 % a 90 %." };
+  if (promoType === "precio") {
+    const bad = Object.entries(rooms).find(([, r]) => r.promoPrice > r.price);
+    if (bad) return { error: "El precio promo no puede ser mayor al precio normal." };
+  }
+  await savePricing({
+    rooms,
+    breakfastPrice,
+    extraPersonFee,
+    promo: { enabled: fd.get("promo_enabled") === "on", minNights, type: promoType, percent: Math.round(percent) || DEFAULT_PRICING.promo.percent },
+  });
+  revalidatePath("/", "layout");
+  return { ok: "Precios guardados. Ya se muestran en el sitio y aplican a las nuevas reservaciones." };
 }

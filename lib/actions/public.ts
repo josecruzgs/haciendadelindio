@@ -4,7 +4,9 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { rateLimited } from "../auth";
 import { isDateKey, nightsBetweenKeys, todayKey } from "../dates";
-import { quote, roomBySlug } from "../pricing";
+import { quote } from "../pricing";
+import { getPricedRoom, getPricing } from "../catalog";
+import { normalizePhone, type PhoneCountry } from "@/data/phone";
 import { getReservationByToken, insertReservation, isRangeBlocked } from "../reservations";
 import { checkoutUrl, stripeEnabled } from "../stripe";
 
@@ -20,7 +22,9 @@ export type BookingInput = {
   /** Desayunos por día: de 0 al número de huéspedes. */
   breakfasts: number;
   name: string;
+  /** 10 dígitos nacionales (se acepta con lada). */
   phone: string;
+  phoneCountry: PhoneCountry;
   notes: string;
   /** Campo trampa anti-spam: debe venir vacío. */
   website?: string;
@@ -41,12 +45,12 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
   }
   if (input.website) return { ok: true, code: "HDI-00000", total: 0, promoTotal: null }; // bot
 
-  const room = roomBySlug(input.room);
+  const room = await getPricedRoom(input.room);
   const rooms = int(input.rooms);
   const adults = int(input.adults);
   const children = int(input.children);
   const name = String(input.name ?? "").trim().slice(0, 120);
-  const phone = String(input.phone ?? "").trim().slice(0, 30);
+  const phone = normalizePhone(input.phoneCountry, String(input.phone ?? "").slice(0, 30));
   const notes = String(input.notes ?? "").trim().slice(0, 1000);
 
   if (!room) return { ok: false, error: "Habitación no válida." };
@@ -59,13 +63,13 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
     return { ok: false, error: "El número de huéspedes excede la capacidad." };
   }
   if (name.length < 2) return { ok: false, error: "Escribe tu nombre." };
-  if (phone.replace(/\D/g, "").length < 10) return { ok: false, error: "Escribe un teléfono a 10 dígitos." };
+  if (!phone) return { ok: false, error: "Escribe un celular válido a 10 dígitos (México o Estados Unidos)." };
 
   try {
     if (await isRangeBlocked(room.slug, input.checkIn, input.checkOut)) {
       return { ok: false, error: "Algunas de esas noches ya no tienen disponibilidad para esta habitación. Elige otras fechas." };
     }
-    const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts: int(input.breakfasts) || 0 });
+    const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts: int(input.breakfasts) || 0 }, await getPricing());
     const { code } = await insertReservation({
       status: "pendiente",
       source: "web",

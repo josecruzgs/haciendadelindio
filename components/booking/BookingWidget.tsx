@@ -6,7 +6,9 @@ import { BedDouble, CalendarCheck, CalendarDays, Check, Clock, Coffee, CreditCar
 import RangeCalendar from "./RangeCalendar";
 import { addDays, fmtLong, fmtShort, nightsBetween, startOfDay, toKey } from "./dates";
 import { WhatsAppIcon } from "../BrandIcons";
-import { breakfastPrice, extraPersonFee, mxn, promoMinNights, rooms, type Room } from "@/data/rooms";
+import PhoneInput from "../PhoneInput";
+import { normalizePhone, type PhoneCountry } from "@/data/phone";
+import { mxn, withPricing, type Pricing, type Room } from "@/data/rooms";
 import { site, whatsappUrl } from "@/data/site";
 import { quote } from "@/lib/pricing";
 import { createReservation } from "@/lib/actions/public";
@@ -15,7 +17,10 @@ type Popover = "dates" | "guests" | null;
 type Channel = "directa" | "whatsapp";
 const MAX_ROOMS = 10;
 
-export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?: Room["slug"] }) {
+export default function BookingWidget({ initialRoom = "doble", pricing }: { initialRoom?: Room["slug"]; pricing: Pricing }) {
+  // Precios vigentes (editables desde el panel)
+  const rooms = useMemo(() => withPricing(pricing), [pricing]);
+  const { breakfastPrice, extraPersonFee } = pricing;
   const [slug, setSlug] = useState<Room["slug"]>(initialRoom);
   const room = rooms.find((r) => r.slug === slug) ?? rooms[0];
 
@@ -27,7 +32,8 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
   const [breakfasts, setBreakfasts] = useState(0); // desayunos por día
   const [breakfastModal, setBreakfastModal] = useState(false);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(""); // 10 dígitos nacionales
+  const [phoneCountry, setPhoneCountry] = useState<PhoneCountry>("MX");
   const [notes, setNotes] = useState("");
   const [open, setOpen] = useState<Popover>(null);
   const [touched, setTouched] = useState(false);
@@ -100,13 +106,17 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
     roomCount,
     guests,
     breakfasts,
-  });
+  }, pricing);
 
-  const phoneDigits = phone.replace(/\D/g, "");
+  const fullPhone = normalizePhone(phoneCountry, phone); // "+52 686 123 4567"
   const errors = {
     dates: nights < 1 ? "Selecciona fecha de entrada y salida." : "",
     name: name.trim().length < 2 ? "Escribe tu nombre." : "",
-    phone: phoneDigits.length < 10 ? "Escribe un teléfono a 10 dígitos." : "",
+    phone: !fullPhone
+      ? phone.length < 10
+        ? "Escribe tu celular a 10 dígitos."
+        : "Revisa el número o el país seleccionado."
+      : "",
   };
   const valid = !errors.dates && !errors.name && !errors.phone;
 
@@ -123,10 +133,10 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       `• Huéspedes: ${guestLabel}`,
       `• Desayuno: ${breakfasts ? `${breakfasts} por día` : "No"}`,
       `• Total estimado: ${mxn(total)} M.N.`,
-      promoEligible ? `• Me interesa la tarifa promo pagando por adelantado: ${mxn(promoTotal)} M.N.` : "",
+      promoEligible ? `• Tarifa promo pagando en línea por adelantado: ${mxn(promoTotal)} M.N.` : "",
       "",
       `Nombre: ${name.trim()}`,
-      `Teléfono: ${phone.trim()}`,
+      `Teléfono: ${fullPhone ?? phone}`,
       notes.trim() ? `Comentarios: ${notes.trim()}` : "",
     ]
       .filter((l, i, arr) => l !== "" || (i > 0 && arr[i - 1] !== ""))
@@ -153,6 +163,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       breakfasts,
       name,
       phone,
+      phoneCountry,
       notes,
       website,
     }).catch(() => ({ ok: false as const, error: "Sin conexión.", retryable: true }));
@@ -385,7 +396,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
                   </p>
                   <p className="mt-2 max-w-sm text-sm text-ink/75">
                     Recepción está revisando la disponibilidad. Una vez confirmada, te enviaremos por WhatsApp al{" "}
-                    <strong>{phone}</strong> un link de pago para completar tu reservación.
+                    <strong>{fullPhone}</strong> un link de pago para completar tu reservación.
                   </p>
                   <p className="mt-3 flex max-w-sm items-start gap-2 rounded-lg bg-white/70 px-3 py-2 text-left text-xs text-ink/70">
                     <CreditCard className="mt-0.5 size-4 shrink-0 text-teal" aria-hidden="true" />
@@ -449,10 +460,11 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
                 {promoEligible && (
                   <div className="rounded-lg bg-orange/15 px-3 py-2 text-ink">
                     <p className="font-bold text-rust-dark">
-                      Tarifa promo {promoMinNights}+ noches: {mxn(promoTotal)}
+                      Promo {pricing.promo.minNights}+ noches pagando en línea: {mxn(promoTotal)}
                     </p>
                     <p className="text-xs text-ink/70">
-                      {mxn(room.promoPrice)} por noche al pagar por adelantado. Aplican restricciones.
+                      {mxn(room.promoPrice)} por noche (ahorras {mxn(total - promoTotal)}). Se aplica al pagar con la liga de
+                      pago segura que te enviamos al confirmar.
                     </p>
                   </div>
                 )}
@@ -511,14 +523,13 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
                   placeholder="Tu nombre"
                 />
               </Field>
-              <Field label="Teléfono" error={touched ? errors.phone : ""}>
-                <input
+              <Field label="Celular (WhatsApp)" error={touched ? errors.phone : ""} group>
+                <PhoneInput
+                  country={phoneCountry}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  autoComplete="tel"
-                  inputMode="tel"
-                  className="w-full bg-transparent text-sm outline-none"
-                  placeholder="686 000 0000"
+                  onCountry={setPhoneCountry}
+                  onChange={setPhone}
+                  inputClassName="text-sm"
                 />
               </Field>
             </div>
@@ -587,6 +598,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       {breakfastModal && (
         <BreakfastModal
           initial={breakfasts || guests}
+          price={breakfastPrice}
           guests={guests}
           nights={nights}
           onClose={() => setBreakfastModal(false)}
@@ -603,12 +615,14 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
 /** Popup para elegir cuántos desayunos por día (de 1 al número de huéspedes). */
 function BreakfastModal({
   initial,
+  price: breakfastPrice,
   guests,
   nights,
   onClose,
   onSave,
 }: {
   initial: number;
+  price: number;
   guests: number;
   nights: number;
   onClose: () => void;
@@ -706,21 +720,27 @@ function Field({
   label,
   error,
   className = "",
+  group = false,
   children,
 }: {
   label: string;
   error?: string;
   className?: string;
+  /** Para campos con varios controles (p. ej. país + número): usa un grupo en vez de <label>. */
+  group?: boolean;
   children: React.ReactNode;
 }) {
+  const Wrapper = group ? "div" : "label";
   return (
     <div className={className}>
-      <label
+      <Wrapper
+        role={group ? "group" : undefined}
+        aria-label={group ? label : undefined}
         className={`block rounded-lg border-2 px-3 pt-1 pb-2 focus-within:border-teal ${error ? "border-rust" : "border-ink/20"}`}
       >
         <span className="block text-xs font-semibold text-ink/65">{label}</span>
         {children}
-      </label>
+      </Wrapper>
       {error && (
         <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-rust">
           <X className="size-3" aria-hidden="true" /> {error}
