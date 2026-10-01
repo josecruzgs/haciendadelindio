@@ -115,3 +115,15 @@ export async function refundPayment(r: Reservation, amount: number) {
   });
   return refund.id;
 }
+
+/** Liga al recibo oficial de Stripe del pago (o null si no hay cargo). */
+export async function receiptUrl(paymentRef: string | null) {
+  if (!paymentRef?.startsWith("pi_") || !stripeEnabled()) return null;
+  const pi = await stripe().paymentIntents.retrieve(paymentRef, { expand: ["latest_charge"] });
+  const charge = pi.latest_charge;
+  return charge && typeof charge !== "string" ? charge.receipt_url : null;
+}
+
+/** Liga al pago en el Dashboard de Stripe (modo prueba o real según la llave). */
+export const dashboardPaymentUrl = (paymentRef: string) =>
+  `https://dashboard.stripe.com/${/_test_/.test(secretKey()) ? "test/" : ""}payments/${paymentRef}`;

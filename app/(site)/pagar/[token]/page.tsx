@@ -69,6 +69,14 @@ export default async function PayPage({
 
         <Summary r={r} amount={amount} />
 
+        {r.paid_at && r.payment_ref?.startsWith("pi_") && (
+          <p className="mt-4 text-center">
+            <a href={`/pagar/${token}/recibo`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-teal underline underline-offset-4">
+              Ver recibo de pago
+            </a>
+          </p>
+        )}
+
         {!r.paid_at && !processing && r.status === "por_pagar" && (
           <>
             <PayButton token={token} label={`Pagar ${mxn(amount)} M.N.`} />

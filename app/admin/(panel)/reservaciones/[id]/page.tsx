@@ -7,7 +7,7 @@ import { fmtKeyCap } from "@/lib/dates";
 import { balanceDue, getReservation, refundable } from "@/lib/reservations";
 import { advanceLabel, computeCharge, getSettings } from "@/lib/settings";
 import { getPricing } from "@/lib/catalog";
-import { payUrl, siteUrl } from "@/lib/stripe";
+import { dashboardPaymentUrl, payUrl, siteUrl } from "@/lib/stripe";
 import { needsPayLink, renderTemplate, reservationVars } from "@/lib/templates";
 import { getRoom } from "@/data/rooms";
 import { whatsappTo } from "@/data/site";
@@ -61,6 +61,16 @@ export default async function ReservationDetail({ params }: { params: Promise<{ 
       <span key="p" className="text-teal">
         {money(r.amount_paid ?? 0)} · {ago(r.paid_at)}
         {r.payment_ref && <span className="block text-xs font-normal text-ink/50">Stripe: {r.payment_ref}</span>}
+        {r.payment_ref?.startsWith("pi_") && (
+          <span className="mt-1 flex justify-end gap-3 text-xs">
+            <a href={`/admin/recibo/${r.id}`} target="_blank" rel="noopener noreferrer" className="font-bold text-teal underline">
+              Ver recibo
+            </a>
+            <a href={dashboardPaymentUrl(r.payment_ref)} target="_blank" rel="noopener noreferrer" className="font-bold text-teal underline">
+              Ver en Stripe
+            </a>
+          </span>
+        )}
       </span>,
     ]);
     if (r.status !== "cancelada") rows.push(["Saldo en recepción", `${money(balanceDue(r))} M.N.`]);
