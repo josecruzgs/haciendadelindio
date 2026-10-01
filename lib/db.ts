@@ -2,7 +2,7 @@ import "server-only";
 
 /**
  * Acceso a Postgres.
- * - Con DATABASE_URL (Neon, Supabase, Vercel Postgres…) usa el driver `postgres`.
+ * - Con DATABASE_URL o POSTGRES_URL (Neon, Supabase, Vercel Postgres…) usa el driver `postgres`.
  * - Sin DATABASE_URL usa PGlite (Postgres embebido) guardado en PGLITE_DIR o ./.data/pglite.
  *   Sirve para desarrollo y para servidores propios con disco persistente.
  */
@@ -83,7 +83,14 @@ const g = globalThis as typeof globalThis & { __hdiDb?: Holder };
 const holder: Holder = (g.__hdiDb ??= {});
 
 async function connect(): Promise<QueryFn> {
-  const url = process.env.DATABASE_URL;
+  // DATABASE_URL (o POSTGRES_URL, que también crea la integración de Neon/Vercel)
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  if (!url && process.env.VERCEL) {
+    // En Vercel el disco es de solo lectura: PGlite no puede guardar nada
+    throw new Error(
+      "Falta DATABASE_URL en Vercel. Conecta la base de datos al proyecto (Storage) sin prefijo y haz Redeploy.",
+    );
+  }
   let query: QueryFn;
 
   if (url) {

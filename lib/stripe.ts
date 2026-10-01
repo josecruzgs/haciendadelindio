@@ -11,16 +11,26 @@ import { markPaid, saveCheckoutSession, type Reservation } from "./reservations"
  *   SITE_URL               dominio público para armar las ligas (p. ej. https://www.haciendadelindiohotel.com)
  */
 
-type Holder = { stripe?: Stripe };
+type Holder = { stripe?: Stripe; key?: string };
 const g = globalThis as typeof globalThis & { __hdiStripe?: Holder };
 const holder: Holder = (g.__hdiStripe ??= {});
 
-export const stripeEnabled = () => Boolean(process.env.STRIPE_SECRET_KEY);
+const secretKey = () => process.env.STRIPE_SECRET_KEY?.trim() ?? "";
+
+export const stripeEnabled = () => Boolean(secretKey());
+
+/** Formato de la llave: sk_ (secreta) o rk_ (restringida), de prueba o real. */
+export const stripeKeyLooksValid = () => /^(sk|rk)_(test|live)_/.test(secretKey());
 
 export function stripe() {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = secretKey();
   if (!key) throw new Error("STRIPE_SECRET_KEY no está configurado.");
-  return (holder.stripe ??= new Stripe(key));
+  // Si la llave cambia (p. ej. de real a prueba), crear un cliente nuevo
+  if (!holder.stripe || holder.key !== key) {
+    holder.stripe = new Stripe(key);
+    holder.key = key;
+  }
+  return holder.stripe;
 }
 
 /** URL pública del sitio: SITE_URL o, si falta, el host de la petición actual. */

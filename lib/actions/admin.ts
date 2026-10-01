@@ -8,6 +8,7 @@ import { checkCredentials, createSession, destroySession, rateLimited, requireAd
 import { isDateKey, nightsBetweenKeys } from "../dates";
 import { quote, roomBySlug } from "../pricing";
 import { getPricedRoom, getPricing, savePricing } from "../catalog";
+import { countOld, cutoffKey, getCleanup, MAX_MONTHS, MIN_MONTHS, purgeOld, saveCleanup } from "../cleanup";
 import { normalizePhone, type PhoneCountry } from "@/data/phone";
 import { DEFAULT_PRICING, mxn, type Pricing } from "@/data/rooms";
 import { whatsappTo } from "@/data/site";
@@ -295,4 +296,40 @@ export async function savePrices(_: FormState, fd: FormData): Promise<FormState>
   });
   revalidatePath("/", "layout");
   return { ok: "Precios guardados. Ya se muestran en el sitio y aplican a las nuevas reservaciones." };
+}
+
+/* ---------- Limpieza de la base de datos ---------- */
+
+export type CleanupPreview = { cutoff: string; reservations: number; blocks: number } | { error: string };
+
+const validMonths = (m: number) => Number.isInteger(m) && m >= MIN_MONTHS && m <= MAX_MONTHS;
+
+/** Cuántos registros se borrarían con esa antigüedad (para mostrarlo antes de confirmar). */
+export async function previewCleanup(months: number): Promise<CleanupPreview> {
+  await requireAdmin();
+  if (!validMonths(months)) return { error: `Elige de ${MIN_MONTHS} a ${MAX_MONTHS} meses.` };
+  const cutoff = cutoffKey(months);
+  return { cutoff, ...(await countOld(cutoff)) };
+}
+
+export async function purgeNow(months: number): Promise<{ ok: string } | { error: string }> {
+  await requireAdmin();
+  if (!validMonths(months)) return { error: `Elige de ${MIN_MONTHS} a ${MAX_MONTHS} meses.` };
+  const deleted = await purgeOld(cutoffKey(months));
+  const c = await getCleanup();
+  await saveCleanup({ ...c, lastRun: c.lastRun, lastDeleted: deleted });
+  revalidatePath("/admin", "layout");
+  return { ok: deleted ? deleted === 1 ? "Se eliminó 1 reservación." : `Se eliminaron ${deleted} reservaciones.` : "No había reservaciones que eliminar." };
+}
+
+export async function saveCleanupSettings(_: FormState, fd: FormData): Promise<FormState> {
+  await requireAdmin();
+  const months = Number(str(fd, "months"));
+  const limitMb = Number(str(fd, "limitMb"));
+  if (!validMonths(months)) return { error: `La antigüedad debe ser de ${MIN_MONTHS} a ${MAX_MONTHS} meses.` };
+  if (!(Number.isInteger(limitMb) && limitMb >= 1 && limitMb <= 1_000_000)) return { error: "Escribe el límite del plan en MB." };
+  const c = await getCleanup();
+  await saveCleanup({ ...c, auto: fd.get("auto") === "on", months, limitMb });
+  revalidatePath("/admin/ajustes");
+  return { ok: fd.get("auto") === "on" ? `Limpieza automática activada: más de ${months} meses.` : "Ajustes de limpieza guardados." };
 }

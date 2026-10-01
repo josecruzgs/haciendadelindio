@@ -56,7 +56,9 @@ Las tablas se crean solas en la primera conexión.
    La promo se cobra al pagar en línea con la liga de Stripe; el sitio y las cotizaciones usan siempre lo vigente. El panel se abre desde el link «Interno» del footer.
 7. Recepción puede además confirmar sin pago en línea (p. ej. pagó en recepción), marcar como **completada** y
    agregar notas internas.
-8. En `/admin/disponibilidad` se bloquean noches (todas las habitaciones o un tipo); el calendario público las
+8. En `/admin/ajustes` → **Base de datos** se ve el espacio usado y se pueden eliminar reservaciones con salida de
+   hace más de N meses (3 por defecto), con respaldo CSV previo, o activar la limpieza automática (una vez al día).
+9. En `/admin/disponibilidad` se bloquean noches (todas las habitaciones o un tipo); el calendario público las
    muestra tachadas y el servidor rechaza solicitudes en esas fechas.
 
 ### Configurar Stripe

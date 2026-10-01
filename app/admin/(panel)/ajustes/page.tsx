@@ -3,8 +3,11 @@ import { CircleAlert, CircleCheck } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { getPricing } from "@/lib/catalog";
+import { stripeKeyLooksValid } from "@/lib/stripe";
+import { dbUsage, getCleanup } from "@/lib/cleanup";
 import { Card } from "@/components/admin/ui";
 import AdvanceForm from "./AdvanceForm";
+import CleanupCard from "./CleanupCard";
 import PricesForm from "./PricesForm";
 import TemplatesForm from "./TemplatesForm";
 
@@ -12,10 +15,17 @@ export const metadata: Metadata = { title: "Ajustes" };
 
 export default async function SettingsPage() {
   await requireAdmin();
-  const [{ advance, templates }, pricing] = await Promise.all([getSettings(), getPricing()]);
+  const [{ advance, templates }, pricing, usage, cleanup] = await Promise.all([getSettings(), getPricing(), dbUsage(), getCleanup()]);
   const key = process.env.STRIPE_SECRET_KEY ?? "";
   const checks = [
-    { ok: Boolean(key), label: key ? `Llave de Stripe configurada (${key.startsWith("sk_live") ? "modo real" : "modo de prueba"})` : "Falta STRIPE_SECRET_KEY" },
+    {
+      ok: Boolean(key) && stripeKeyLooksValid(),
+      label: !key
+        ? "Falta STRIPE_SECRET_KEY"
+        : !stripeKeyLooksValid()
+          ? `La llave empieza con «${key.trim().split("_").slice(0, 2).join("_")}_…»: usa la Secret key (sk_test_… o sk_live_…) de Developers → API keys`
+          : `Llave de Stripe configurada (${/_live_/.test(key) ? "modo real" : "modo de prueba"})`,
+    },
     { ok: Boolean(process.env.STRIPE_WEBHOOK_SECRET), label: process.env.STRIPE_WEBHOOK_SECRET ? "Webhook configurado" : "Falta STRIPE_WEBHOOK_SECRET" },
     { ok: Boolean(process.env.SITE_URL), label: process.env.SITE_URL ? `Ligas con ${process.env.SITE_URL}` : "SITE_URL vacío: las ligas usan el dominio del panel" },
   ];
@@ -44,6 +54,13 @@ export default async function SettingsPage() {
               Cuánto se cobra con la liga de pago al confirmar una reservación. El resto se paga en recepción.
             </p>
             <AdvanceForm initial={advance} />
+          </Card>
+          <Card>
+            <h2 id="base-de-datos" className="scroll-mt-4 font-display text-2xl text-teal">
+              Base de datos
+            </h2>
+            <p className="mt-1 text-sm text-ink/65">Espacio usado y limpieza de reservaciones antiguas.</p>
+            <CleanupCard usage={usage} settings={cleanup} />
           </Card>
           <Card>
             <h2 className="font-display text-2xl text-teal">Estado de Stripe</h2>
