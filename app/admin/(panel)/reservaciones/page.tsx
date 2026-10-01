@@ -12,13 +12,18 @@ type Search = { estado?: string; q?: string };
 export default async function ReservationsPage({ searchParams }: { searchParams: Promise<Search> }) {
   await requireAdmin();
   const sp = await searchParams;
-  const status = (STATUSES as readonly string[]).includes(sp.estado ?? "") ? (sp.estado as Status) : "todas";
+  const status =
+    sp.estado === "pagada" ? "pagada" : (STATUSES as readonly string[]).includes(sp.estado ?? "") ? (sp.estado as Status) : "todas";
   const q = (sp.q ?? "").slice(0, 80);
   const rows = await listReservations({ status, q });
 
-  const tabs: { key: Status | "todas"; label: string }[] = [
+  const tabs: { key: Status | "todas" | "pagada"; label: string }[] = [
     { key: "todas", label: "Todas" },
-    ...STATUSES.map((s) => ({ key: s, label: statusMeta[s].label })),
+    ...STATUSES.flatMap((s) => {
+      const tab = { key: s, label: statusMeta[s].label };
+      // «Pagadas» justo después de «Esperando pago»
+      return s === "por_pagar" ? [tab, { key: "pagada" as const, label: "Pagadas" }] : [tab];
+    }),
   ];
   const href = (estado: string) => {
     const p = new URLSearchParams();
@@ -109,7 +114,7 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
                   </td>
                   <td className="px-4 py-3 text-right font-bold">{money(r.total)}</td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={r.status} />
+                    <StatusBadge status={r.status} reservation={r} />
                   </td>
                   <td className="px-4 py-3 text-xs text-ink/60">{ago(r.created_at)}</td>
                 </tr>

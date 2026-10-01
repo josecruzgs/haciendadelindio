@@ -161,10 +161,13 @@ export async function syncRefunded(paymentIntent: string, refundedTotal: number)
   );
 }
 
-export async function listReservations(opts: { status?: Status | "todas"; q?: string; limit?: number } = {}) {
+export async function listReservations(opts: { status?: Status | "todas" | "pagada"; q?: string; limit?: number } = {}) {
   const where: string[] = [];
   const params: unknown[] = [];
-  if (opts.status && opts.status !== "todas") {
+  if (opts.status === "pagada") {
+    // Pagaron en línea (total o anticipo) y siguen activas o ya se hospedaron
+    where.push(`paid_at IS NOT NULL AND status IN ('confirmada', 'completada')`);
+  } else if (opts.status && opts.status !== "todas") {
     params.push(opts.status);
     where.push(`status = $${params.length}`);
   }

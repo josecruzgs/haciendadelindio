@@ -118,7 +118,7 @@ export default async function DashboardPage() {
                         {roomLabel(r)} · {r.nights} noche{r.nights !== 1 ? "s" : ""} · {guestsLabel(r)}
                       </span>
                     </span>
-                    <StatusBadge status={r.status} />
+                    <StatusBadge status={r.status} reservation={r} />
                   </Link>
                 </li>
               ))}

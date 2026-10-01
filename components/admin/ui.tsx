@@ -21,8 +21,22 @@ export function ChannelTag({ channel }: { channel: Channel }) {
   return <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide uppercase ${m.cls}`}>{m.label}</span>;
 }
 
-export function StatusBadge({ status }: { status: Status }) {
-  const m = statusMeta[status];
+/**
+ * Estado que se muestra en el panel. Una reservación confirmada que pagó en línea se ve como
+ * «Pagada» (o «Anticipo pagado» si queda saldo en recepción); el estado guardado sigue siendo «confirmada».
+ */
+export function displayStatus(r: Pick<Reservation, "status" | "paid_at" | "amount_paid" | "charge_total" | "total">) {
+  if (r.status === "confirmada" && r.paid_at) {
+    const owed = (r.charge_total ?? r.total) - (r.amount_paid ?? 0);
+    return owed > 0
+      ? { label: "Anticipo pagado", cls: "bg-teal-light text-teal ring-teal/50" }
+      : { label: "Pagada", cls: "bg-teal text-white ring-teal" };
+  }
+  return statusMeta[r.status];
+}
+
+export function StatusBadge({ status, reservation }: { status: Status; reservation?: Reservation }) {
+  const m = reservation ? displayStatus(reservation) : statusMeta[status];
   return (
     <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ${m.cls}`}>{m.label}</span>
   );

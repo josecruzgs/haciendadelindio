@@ -84,7 +84,7 @@ export default async function ReservationDetail({ params }: { params: Promise<{ 
 
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="font-display text-4xl text-teal">{r.code}</h1>
-        <StatusBadge status={r.status} />
+        <StatusBadge status={r.status} reservation={r} />
         <span className="text-sm text-ink/55">
           <ChannelTag channel={r.channel} /> · recibida {ago(r.created_at)}
         </span>
