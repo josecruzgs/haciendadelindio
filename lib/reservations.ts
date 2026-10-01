@@ -3,7 +3,12 @@ import { query } from "./db";
 import { addDaysKey } from "./dates";
 import type { Room } from "@/data/rooms";
 
-export const STATUSES = ["pendiente", "confirmada", "completada", "cancelada"] as const;
+/**
+ * pendiente  → solicitud recibida, recepción revisa disponibilidad
+ * por_pagar  → hay disponibilidad; se envió la liga de pago (Stripe) al huésped
+ * confirmada → pagada (o confirmada manualmente por recepción)
+ */
+export const STATUSES = ["pendiente", "por_pagar", "confirmada", "completada", "cancelada"] as const;
 export type Status = (typeof STATUSES)[number];
 export type Channel = "directa" | "whatsapp" | "recepcion";
 
@@ -21,12 +26,25 @@ export type Reservation = {
   check_out: string;
   nights: number;
   breakfast: boolean;
+  /** Desayunos por día (0 = sin desayuno). */
+  breakfasts: number;
   total: number;
   promo_total: number | null;
   name: string;
   phone: string;
   notes: string | null;
   admin_notes: string | null;
+  pay_token: string | null;
+  amount_due: number | null;
+  stripe_session_id: string | null;
+  payment_ref: string | null;
+  paid_at: string | null;
+  /** Total acordado al enviar la liga (con promo si aplica). */
+  charge_total: number | null;
+  amount_paid: number | null;
+  refunded_amount: number;
+  refund_ref: string | null;
+  cancelled_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -35,21 +53,26 @@ export type Block = { id: number; room: Room["slug"] | null; start_date: string;
 
 // Las fechas se leen como texto para evitar corrimientos de zona horaria.
 const COLS = `id, code, status, source, channel, room, rooms, adults, children,
-  check_in::text AS check_in, check_out::text AS check_out, nights, breakfast, total, promo_total,
-  name, phone, notes, admin_notes, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+  check_in::text AS check_in, check_out::text AS check_out, nights, breakfast, breakfasts, total, promo_total,
+  name, phone, notes, admin_notes, pay_token, amount_due, stripe_session_id, payment_ref,
+  to_char(paid_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS paid_at,
+  charge_total, amount_paid, refunded_amount, refund_ref,
+  to_char(cancelled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS cancelled_at, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
   to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at`;
 
-export type NewReservation = Omit<Reservation, "id" | "code" | "created_at" | "updated_at" | "admin_notes"> & {
+type PaymentCols = "pay_token" | "amount_due" | "stripe_session_id" | "payment_ref" | "paid_at" | "charge_total"
+  | "amount_paid" | "refunded_amount" | "refund_ref" | "cancelled_at";
+export type NewReservation = Omit<Reservation, "id" | "code" | "created_at" | "updated_at" | "admin_notes" | "breakfast" | PaymentCols> & {
   admin_notes?: string | null;
 };
 
 export async function insertReservation(r: NewReservation) {
   const [row] = await query<{ id: number }>(
     `INSERT INTO reservations (status, source, channel, room, rooms, adults, children, check_in, check_out, nights,
-       breakfast, total, promo_total, name, phone, notes, admin_notes)
-     VALUES ($1,$2,$17,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+       breakfast, breakfasts, total, promo_total, name, phone, notes, admin_notes)
+     VALUES ($1,$2,$17,$3,$4,$5,$6,$7,$8,$9,$10,$18,$11,$12,$13,$14,$15,$16) RETURNING id`,
     [r.status, r.source, r.room, r.rooms, r.adults, r.children, r.check_in, r.check_out, r.nights,
-     r.breakfast, r.total, r.promo_total, r.name, r.phone, r.notes, r.admin_notes ?? null, r.channel],
+     r.breakfasts > 0, r.total, r.promo_total, r.name, r.phone, r.notes, r.admin_notes ?? null, r.channel, r.breakfasts],
   );
   const [{ n }] = await query<{ n: number }>(
     `INSERT INTO counters (name, n) VALUES ('reservation', 1)
@@ -63,6 +86,79 @@ export async function insertReservation(r: NewReservation) {
 export async function getReservation(id: number) {
   const [row] = await query<Reservation>(`SELECT ${COLS} FROM reservations WHERE id = $1`, [id]);
   return row ?? null;
+}
+
+export async function getReservationByToken(token: string) {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
+  const [row] = await query<Reservation>(`SELECT ${COLS} FROM reservations WHERE pay_token = $1`, [token]);
+  return row ?? null;
+}
+
+/* ---------- Pago en línea ---------- */
+
+/** Saldo que queda por pagar en recepción. */
+export const balanceDue = (r: Pick<Reservation, "total" | "charge_total" | "amount_paid">) =>
+  Math.max(0, (r.charge_total ?? r.total) - (r.amount_paid ?? 0));
+
+/** Lo que aún se puede reembolsar por Stripe. */
+export const refundable = (r: Pick<Reservation, "amount_paid" | "refunded_amount" | "payment_ref">) =>
+  r.payment_ref?.startsWith("pi_") ? Math.max(0, (r.amount_paid ?? 0) - r.refunded_amount) : 0;
+
+/** Pasa la reservación a «por_pagar» con los montos dados y genera (o reutiliza) su liga de pago. */
+export async function requestPayment(id: number, token: string, amounts: { total: number; due: number }) {
+  const [row] = await query<{ pay_token: string }>(
+    `UPDATE reservations
+     SET status = 'por_pagar', pay_token = COALESCE(pay_token, $2),
+         charge_total = $3, amount_due = $4, updated_at = NOW()
+     WHERE id = $1 AND status IN ('pendiente', 'por_pagar') AND paid_at IS NULL RETURNING pay_token`,
+    [id, token, amounts.total, amounts.due],
+  );
+  return row?.pay_token ?? null;
+}
+
+export async function saveCheckoutSession(id: number, sessionId: string) {
+  await query(`UPDATE reservations SET stripe_session_id = $1, updated_at = NOW() WHERE id = $2`, [sessionId, id]);
+}
+
+/**
+ * Registra el pago y confirma la reservación. Idempotente (el webhook y la página de éxito pueden llegar ambos).
+ * Si recepción la canceló mientras el huésped pagaba, se registra el pago pero no cambia el estado (reembolsar en Stripe).
+ */
+export async function markPaid(id: number, paymentRef: string | null, amount: number | null) {
+  const rows = await query<{ id: number }>(
+    `UPDATE reservations
+     SET paid_at = NOW(), payment_ref = $2, amount_paid = COALESCE($3, amount_due), updated_at = NOW(),
+         status = CASE WHEN status IN ('pendiente', 'por_pagar') THEN 'confirmada' ELSE status END
+     WHERE id = $1 AND paid_at IS NULL RETURNING id`,
+    [id, paymentRef, amount],
+  );
+  return rows.length > 0;
+}
+
+/** Cancela la reservación (solo cuando el huésped lo pide) y registra el reembolso si lo hubo. */
+export async function markCancelled(id: number, refund?: { amount: number; ref: string }) {
+  await query(
+    `UPDATE reservations
+     SET status = 'cancelada', cancelled_at = NOW(), updated_at = NOW(),
+         refunded_amount = refunded_amount + $2, refund_ref = COALESCE($3, refund_ref)
+     WHERE id = $1`,
+    [id, refund?.amount ?? 0, refund?.ref ?? null],
+  );
+}
+
+export async function addRefund(id: number, amount: number, ref: string) {
+  await query(
+    `UPDATE reservations SET refunded_amount = refunded_amount + $2, refund_ref = $3, updated_at = NOW() WHERE id = $1`,
+    [id, amount, ref],
+  );
+}
+
+/** Sincroniza reembolsos hechos directo en el Dashboard de Stripe (webhook charge.refunded). */
+export async function syncRefunded(paymentIntent: string, refundedTotal: number) {
+  await query(
+    `UPDATE reservations SET refunded_amount = GREATEST(refunded_amount, $2), updated_at = NOW() WHERE payment_ref = $1`,
+    [paymentIntent, refundedTotal],
+  );
 }
 
 export async function listReservations(opts: { status?: Status | "todas"; q?: string; limit?: number } = {}) {
@@ -109,10 +205,11 @@ export async function updateReservation(id: number, fields: { status?: Status; a
 export async function dashboardStats(today: string) {
   const monthStart = `${today.slice(0, 7)}-01`;
   const [row] = await query<{
-    pending: number; arrivals: number; departures: number; in_house: number; month_revenue: number; month_nights: number;
+    pending: number; awaiting_payment: number; arrivals: number; departures: number; in_house: number; month_revenue: number; month_nights: number;
   }>(
     `SELECT
        COUNT(*) FILTER (WHERE status = 'pendiente')::int AS pending,
+       COUNT(*) FILTER (WHERE status = 'por_pagar')::int AS awaiting_payment,
        COUNT(*) FILTER (WHERE status = 'confirmada' AND check_in = $1::date)::int AS arrivals,
        COUNT(*) FILTER (WHERE status = 'confirmada' AND check_out = $1::date)::int AS departures,
        COALESCE(SUM(rooms) FILTER (WHERE status = 'confirmada' AND check_in <= $1::date AND check_out > $1::date), 0)::int AS in_house,

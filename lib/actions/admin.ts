@@ -3,13 +3,24 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { randomBytes } from "node:crypto";
 import { checkCredentials, createSession, destroySession, rateLimited, requireAdmin } from "../auth";
 import { isDateKey, nightsBetweenKeys } from "../dates";
 import { quote, roomBySlug } from "../pricing";
+import { mxn } from "@/data/rooms";
+import { whatsappTo } from "@/data/site";
+import { computeCharge, getSettings, saveSetting, STRIPE_MIN_MXN, type AdvanceSettings } from "../settings";
+import { expireOpenSession, payUrl, refundPayment, siteUrl, stripeEnabled } from "../stripe";
+import { renderTemplate, reservationVars, type Template } from "../templates";
 import {
   deleteBlock,
+  getReservation,
   insertBlock,
   insertReservation,
+  markCancelled,
+  addRefund,
+  refundable,
+  requestPayment,
   STATUSES,
   updateReservation,
   type Status,
@@ -44,9 +55,85 @@ export async function logout() {
 
 export async function setStatus(id: number, status: Status) {
   await requireAdmin();
-  if (!STATUSES.includes(status)) return;
+  // Cancelar va por cancelReservation (invalida la liga y permite reembolsar)
+  if (!STATUSES.includes(status) || status === "cancelada") return;
   await updateReservation(id, { status });
   revalidatePath("/admin", "layout");
+}
+
+export type PaymentLinkResult = { ok: true; payUrl: string; waUrl: string } | { ok: false; error: string };
+
+/**
+ * «Hay disponibilidad»: pasa la reservación a «por pagar», genera su liga de pago y
+ * regresa el mensaje de WhatsApp listo para enviarla al huésped. También sirve para reenviarla.
+ */
+export async function sendPaymentLink(id: number): Promise<PaymentLinkResult> {
+  await requireAdmin();
+  if (!stripeEnabled()) return { ok: false, error: "Configura STRIPE_SECRET_KEY en las variables de entorno para cobrar en línea." };
+  const current = await getReservation(id);
+  if (!current) return { ok: false, error: "No encontramos la reservación." };
+  const { advance, templates } = await getSettings();
+  const amounts = computeCharge(advance, current);
+  if (amounts.due < STRIPE_MIN_MXN) {
+    return { ok: false, error: `El cobro en línea sería de ${mxn(amounts.due)}; Stripe pide mínimo ${mxn(STRIPE_MIN_MXN)}. Revisa Ajustes.` };
+  }
+
+  const token = await requestPayment(id, randomBytes(24).toString("base64url"), amounts);
+  const r = token ? await getReservation(id) : null;
+  if (!r || !token) return { ok: false, error: "Solo se puede enviar la liga a reservaciones pendientes o por pagar sin pago previo." };
+
+  const url = payUrl(await siteUrl(), token);
+  const tpl = templates.find((t) => t.id === "liga_pago")!;
+  revalidatePath("/admin", "layout");
+  return { ok: true, payUrl: url, waUrl: whatsappTo(r.phone, renderTemplate(tpl.text, reservationVars(r, { liga: url }))) };
+}
+
+export type CancelResult = { ok: true; waUrl: string } | { ok: false; error: string };
+
+/**
+ * Cancelación a petición del huésped: invalida la liga de pago abierta, reembolsa por Stripe
+ * lo indicado (0 = sin reembolso) y regresa el mensaje de WhatsApp de cancelación.
+ */
+export async function cancelReservation(id: number, refundAmount: number): Promise<CancelResult> {
+  await requireAdmin();
+  const r = await getReservation(id);
+  if (!r) return { ok: false, error: "No encontramos la reservación." };
+  if (r.status === "cancelada") return { ok: false, error: "La reservación ya está cancelada." };
+  const amount = Math.round(Number(refundAmount) || 0);
+  if (amount < 0 || amount > refundable(r)) return { ok: false, error: `El reembolso debe ser de $0 a ${mxn(refundable(r))}.` };
+
+  try {
+    await expireOpenSession(r);
+    const refundRef = amount > 0 ? await refundPayment(r, amount) : null;
+    await markCancelled(id, refundRef ? { amount, ref: refundRef } : undefined);
+  } catch (e) {
+    console.error("[stripe] no se pudo cancelar/reembolsar", e);
+    return { ok: false, error: "Stripe rechazó la operación; la reservación no se canceló. Intenta de nuevo o revisa el Dashboard de Stripe." };
+  }
+
+  const { templates } = await getSettings();
+  const tpl = templates.find((t) => t.id === "cancelacion")!;
+  revalidatePath("/admin", "layout");
+  return { ok: true, waUrl: whatsappTo(r.phone, renderTemplate(tpl.text, reservationVars(r, { reembolso: amount }))) };
+}
+
+/** Reembolso posterior (p. ej. se canceló sin reembolsar y luego se acordó devolver). */
+export async function refundReservation(id: number, refundAmount: number): Promise<CancelResult> {
+  await requireAdmin();
+  const r = await getReservation(id);
+  const amount = Math.round(Number(refundAmount) || 0);
+  if (!r) return { ok: false, error: "No encontramos la reservación." };
+  if (!(amount > 0 && amount <= refundable(r))) return { ok: false, error: `El reembolso debe ser de $1 a ${mxn(refundable(r))}.` };
+  try {
+    await addRefund(id, amount, await refundPayment(r, amount));
+  } catch (e) {
+    console.error("[stripe] no se pudo reembolsar", e);
+    return { ok: false, error: "Stripe rechazó el reembolso. Revisa el Dashboard de Stripe." };
+  }
+  const { templates } = await getSettings();
+  const tpl = templates.find((t) => t.id === "cancelacion")!;
+  revalidatePath("/admin", "layout");
+  return { ok: true, waUrl: whatsappTo(r.phone, renderTemplate(tpl.text, reservationVars(r, { reembolso: amount }))) };
 }
 
 export async function saveAdminNotes(id: number, _: FormState, fd: FormData): Promise<FormState> {
@@ -64,7 +151,7 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
   const rooms = num(fd, "rooms");
   const adults = num(fd, "adults");
   const children = num(fd, "children") || 0;
-  const breakfast = fd.get("breakfast") === "on";
+  const breakfasts = Math.max(0, num(fd, "breakfasts") || 0);
   const status = str(fd, "status") as Status;
   const name = str(fd, "name").slice(0, 120);
   const phone = str(fd, "phone").slice(0, 30);
@@ -80,7 +167,7 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
   if (name.length < 2) return { error: "Escribe el nombre del huésped." };
   if (!STATUSES.includes(status)) return { error: "Estado no válido." };
 
-  const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfast });
+  const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts });
   const customTotal = num(fd, "total");
   const { id } = await insertReservation({
     status,
@@ -93,7 +180,7 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
     check_in: checkIn,
     check_out: checkOut,
     nights,
-    breakfast,
+    breakfasts: q.breakfasts,
     total: Number.isFinite(customTotal) && customTotal >= 0 ? customTotal : q.total,
     promo_total: null,
     name,
@@ -125,4 +212,48 @@ export async function removeBlock(id: number) {
   await requireAdmin();
   await deleteBlock(id);
   revalidatePath("/admin/disponibilidad");
+}
+
+/* ---------- Ajustes ---------- */
+
+export async function saveAdvanceSettings(_: FormState, fd: FormData): Promise<FormState> {
+  await requireAdmin();
+  const mode = str(fd, "mode") as AdvanceSettings["mode"];
+  if (!["total", "porcentaje", "fijo"].includes(mode)) return { error: "Elige cómo cobrar." };
+  const value = Number(str(fd, "value") || (mode === "total" ? 100 : NaN));
+  if (mode === "porcentaje" && !(value >= 1 && value <= 100)) return { error: "El porcentaje debe ser de 1 a 100." };
+  if (mode === "fijo" && !(value >= STRIPE_MIN_MXN)) return { error: `El monto fijo debe ser de al menos ${mxn(STRIPE_MIN_MXN)}.` };
+  await saveSetting("advance", {
+    mode,
+    value: mode === "total" ? 100 : Math.round(value),
+    applyPromo: fd.get("applyPromo") === "on",
+  } satisfies AdvanceSettings);
+  revalidatePath("/admin", "layout");
+  return { ok: "Ajustes de pago guardados. Aplican a las ligas que envíes desde ahora." };
+}
+
+export async function saveTemplates(_: FormState, fd: FormData): Promise<FormState> {
+  await requireAdmin();
+  let list: Template[];
+  try {
+    list = JSON.parse(str(fd, "templates"));
+    if (!Array.isArray(list)) throw new Error();
+  } catch {
+    return { error: "No se pudieron leer las plantillas." };
+  }
+  const clean = list
+    .slice(0, 40)
+    .map((t) => ({
+      id: String(t.id ?? "").replace(/[^\w-]/g, "").slice(0, 40),
+      label: String(t.label ?? "").trim().slice(0, 40),
+      text: String(t.text ?? "").trim().slice(0, 1500),
+    }))
+    .filter((t) => t.id && t.label && t.text);
+  if (clean.length !== list.length) return { error: "Cada respuesta necesita nombre y texto." };
+  if (!clean.find((t) => t.id === "liga_pago")?.text.includes("{liga}")) {
+    return { error: "La plantilla «Liga de pago» debe incluir {liga}." };
+  }
+  await saveSetting("templates", clean);
+  revalidatePath("/admin", "layout");
+  return { ok: "Respuestas guardadas." };
 }

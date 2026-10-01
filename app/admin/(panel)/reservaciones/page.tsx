@@ -101,7 +101,11 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
                   </td>
                   <td className="px-4 py-3">
                     {roomLabel(r)}
-                    {r.breakfast && <span className="ml-1 text-xs text-ink/55">+ desayuno</span>}
+                    {r.breakfasts > 0 && (
+                      <span className="ml-1 text-xs text-ink/55">
+                        + {r.breakfasts} desayuno{r.breakfasts !== 1 ? "s" : ""}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-bold">{money(r.total)}</td>
                   <td className="px-4 py-3">

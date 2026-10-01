@@ -10,13 +10,13 @@ const label = "block text-sm font-semibold text-ink/75";
 
 export default function NewReservationForm({ today, tomorrow }: { today: string; tomorrow: string }) {
   const [state, action, pending] = useActionState(createManualReservation, undefined);
-  const [f, setF] = useState({ room: "doble", rooms: 1, adults: 2, children: 0, check_in: today, check_out: tomorrow, breakfast: false });
+  const [f, setF] = useState({ room: "doble", rooms: 1, adults: 2, children: 0, check_in: today, check_out: tomorrow, breakfasts: 0 });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setF((p) => ({ ...p, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.type === "number" ? Number(e.target.value) : e.target.value }));
 
   const room = rooms.find((r) => r.slug === f.room)!;
   const nights = Math.round((Date.parse(f.check_out) - Date.parse(f.check_in)) / 86_400_000);
-  const q = nights > 0 ? quote(room, { nights, roomCount: f.rooms || 1, guests: f.adults + f.children, breakfast: f.breakfast }) : null;
+  const q = nights > 0 ? quote(room, { nights, roomCount: f.rooms || 1, guests: f.adults + f.children, breakfasts: f.breakfasts }) : null;
 
   return (
     <form action={action} className="grid gap-4 sm:grid-cols-2">
@@ -58,9 +58,18 @@ export default function NewReservationForm({ today, tomorrow }: { today: string;
         Teléfono
         <input name="phone" type="tel" className={input} />
       </label>
-      <label className="flex items-center gap-2 text-sm font-semibold text-ink/75 sm:col-span-2">
-        <input name="breakfast" type="checkbox" checked={f.breakfast} onChange={set("breakfast")} className="size-4 accent-teal" />
-        Incluye desayuno
+      <label className={label}>
+        Desayunos por día
+        <input
+          name="breakfasts"
+          type="number"
+          min={0}
+          max={f.adults + f.children}
+          value={f.breakfasts}
+          onChange={set("breakfasts")}
+          className={input}
+        />
+        <span className="mt-1 block text-xs font-normal text-ink/55">0 = sin desayuno. Máximo uno por huésped.</span>
       </label>
       <label className={label}>
         Estado

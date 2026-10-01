@@ -8,6 +8,7 @@ const links = [
   { href: "/admin/reservaciones", label: "Reservaciones" },
   { href: "/admin/reservaciones/nueva", label: "Nueva", exact: true },
   { href: "/admin/disponibilidad", label: "Disponibilidad" },
+  { href: "/admin/ajustes", label: "Ajustes" },
 ];
 
 export default function AdminNav({ pending }: { pending: number }) {

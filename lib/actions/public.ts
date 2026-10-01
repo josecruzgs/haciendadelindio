@@ -1,10 +1,12 @@
 "use server";
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { rateLimited } from "../auth";
 import { isDateKey, nightsBetweenKeys, todayKey } from "../dates";
 import { quote, roomBySlug } from "../pricing";
-import { insertReservation, isRangeBlocked } from "../reservations";
+import { getReservationByToken, insertReservation, isRangeBlocked } from "../reservations";
+import { checkoutUrl, stripeEnabled } from "../stripe";
 
 export type BookingInput = {
   /** "directa" = botón Reservar ahora; "whatsapp" = también abre WhatsApp. */
@@ -15,7 +17,8 @@ export type BookingInput = {
   children: number;
   checkIn: string;
   checkOut: string;
-  breakfast: boolean;
+  /** Desayunos por día: de 0 al número de huéspedes. */
+  breakfasts: number;
   name: string;
   phone: string;
   notes: string;
@@ -62,7 +65,7 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
     if (await isRangeBlocked(room.slug, input.checkIn, input.checkOut)) {
       return { ok: false, error: "Algunas de esas noches ya no tienen disponibilidad para esta habitación. Elige otras fechas." };
     }
-    const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfast: Boolean(input.breakfast) });
+    const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts: int(input.breakfasts) || 0 });
     const { code } = await insertReservation({
       status: "pendiente",
       source: "web",
@@ -74,7 +77,7 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
       check_in: input.checkIn,
       check_out: input.checkOut,
       nights,
-      breakfast: Boolean(input.breakfast),
+      breakfasts: q.breakfasts,
       total: q.total,
       promo_total: q.promoEligible ? q.promoTotal : null,
       name,
@@ -86,4 +89,28 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
     console.error("[reservas] no se pudo guardar la solicitud", e);
     return { ok: false, error: "No pudimos registrar la solicitud.", retryable: true };
   }
+}
+
+/* ---------- Pago en línea ---------- */
+
+export type PayState = { error?: string } | undefined;
+
+/** Botón «Pagar» de /pagar/<token>: crea la sesión de Stripe Checkout y redirige a ella. */
+export async function startPayment(token: string, _: PayState): Promise<PayState> {
+  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  if (rateLimited(`pay:${ip}`, 20, 60 * 60_000)) return { error: "Demasiados intentos. Intenta más tarde." };
+
+  const r = await getReservationByToken(token);
+  if (!r || r.paid_at) return { error: "Esta liga de pago ya no está disponible." };
+  if (r.status !== "por_pagar") return { error: "Esta reservación no tiene un pago pendiente." };
+  if (!stripeEnabled()) return { error: "El pago en línea no está disponible por el momento. Contáctanos por WhatsApp." };
+
+  let url: string;
+  try {
+    url = await checkoutUrl(r);
+  } catch (e) {
+    console.error("[stripe] no se pudo crear la sesión de pago", e);
+    return { error: "No pudimos abrir la página de pago. Intenta de nuevo en unos minutos." };
+  }
+  redirect(url);
 }

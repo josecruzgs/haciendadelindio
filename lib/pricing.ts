@@ -5,6 +5,7 @@ export type Quote = {
   lodging: number;
   extraGuests: number;
   extrasTotal: number;
+  breakfasts: number;
   breakfastTotal: number;
   total: number;
   promoEligible: boolean;
@@ -14,12 +15,14 @@ export type Quote = {
 /** Cálculo de tarifa compartido por el widget público y el servidor. */
 export function quote(
   room: Room,
-  opts: { nights: number; roomCount: number; guests: number; breakfast: boolean },
+  opts: { nights: number; roomCount: number; guests: number; breakfasts: number },
 ): Quote {
-  const { nights, roomCount, guests, breakfast } = opts;
+  const { nights, roomCount, guests } = opts;
+  // Desayunos: de 0 a un desayuno por huésped, por día
+  const breakfasts = Math.max(0, Math.min(guests, Math.floor(opts.breakfasts) || 0));
   const extraGuests = Math.max(0, guests - room.includedGuests * roomCount);
   const extrasTotal = extraGuests * extraPersonFee * nights;
-  const breakfastTotal = breakfast ? guests * breakfastPrice * nights : 0;
+  const breakfastTotal = breakfasts * breakfastPrice * nights;
   const lodging = room.price * roomCount * nights;
   const promoEligible = nights >= promoMinNights;
   return {
@@ -27,6 +30,7 @@ export function quote(
     lodging,
     extraGuests,
     extrasTotal,
+    breakfasts,
     breakfastTotal,
     total: lodging + extrasTotal + breakfastTotal,
     promoEligible,

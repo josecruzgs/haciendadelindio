@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BedDouble, CalendarArrowDown, CalendarArrowUp, Clock, Wallet } from "lucide-react";
+import { BedDouble, CalendarArrowDown, CalendarArrowUp, Clock, CreditCard, Wallet } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { fmtKey, fmtKeyCap, todayKey } from "@/lib/dates";
 import { dashboardStats, listReservations, upcomingArrivals } from "@/lib/reservations";
@@ -17,6 +17,7 @@ export default async function DashboardPage() {
 
   const cards = [
     { label: "Solicitudes pendientes", value: stats.pending, icon: Clock, accent: "text-rust", href: "/admin/reservaciones?estado=pendiente" },
+    { label: "Esperando pago", value: stats.awaiting_payment, icon: CreditCard, accent: "text-teal", href: "/admin/reservaciones?estado=por_pagar" },
     { label: "Llegadas hoy", value: stats.arrivals, icon: CalendarArrowDown, accent: "text-teal" },
     { label: "Salidas hoy", value: stats.departures, icon: CalendarArrowUp, accent: "text-teal" },
     { label: "Habitaciones ocupadas hoy", value: stats.in_house, icon: BedDouble, accent: "text-teal" },
@@ -41,7 +42,7 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map(({ label, value, sub, icon: Icon, accent, href }) => {
           const body = (
             <>
@@ -81,7 +82,15 @@ export default async function DashboardPage() {
                     </p>
                     <p className="text-xs text-ink/50">Recibida {ago(r.created_at)}</p>
                   </Link>
-                  <StatusButtons id={r.id} status={r.status} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/admin/reservaciones/${r.id}`}
+                      className="rounded-md bg-teal px-3 py-1 text-xs font-bold text-white hover:bg-teal-dark"
+                    >
+                      Revisar disponibilidad
+                    </Link>
+                    <StatusButtons id={r.id} status={r.status} />
+                  </div>
                 </li>
               ))}
             </ul>

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BedDouble, CalendarCheck, CalendarDays, Check, CircleCheckBig, Coffee, LoaderCircle, Minus, PawPrint, Phone, Plus, Users, X } from "lucide-react";
+import { BedDouble, CalendarCheck, CalendarDays, Check, Clock, Coffee, CreditCard, LoaderCircle, Minus, PawPrint, Pencil, Phone, Plus, Users, X } from "lucide-react";
 import RangeCalendar from "./RangeCalendar";
 import { addDays, fmtLong, fmtShort, nightsBetween, startOfDay, toKey } from "./dates";
 import { WhatsAppIcon } from "../BrandIcons";
@@ -24,7 +24,8 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
   const [roomCount, setRoomCount] = useState(1);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
-  const [breakfast, setBreakfast] = useState(false);
+  const [breakfasts, setBreakfasts] = useState(0); // desayunos por día
+  const [breakfastModal, setBreakfastModal] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
@@ -88,13 +89,17 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
     }
     if (adults < roomCount) setAdults(roomCount);
   }, [capacity, guests, adults, roomCount]);
+  // No más desayunos que huéspedes
+  useEffect(() => {
+    if (breakfasts > guests) setBreakfasts(guests);
+  }, [breakfasts, guests]);
 
   const nights = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
   const { extraGuests, breakfastTotal, extrasTotal, lodging, total, promoEligible, promoTotal } = quote(room, {
     nights,
     roomCount,
     guests,
-    breakfast,
+    breakfasts,
   });
 
   const phoneDigits = phone.replace(/\D/g, "");
@@ -116,7 +121,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       `• Entrada: ${checkIn ? fmtLong(checkIn) : "-"}`,
       `• Salida: ${checkOut ? fmtLong(checkOut) : "-"} (${nights} noche${nights !== 1 ? "s" : ""})`,
       `• Huéspedes: ${guestLabel}`,
-      `• Desayuno: ${breakfast ? "Sí" : "No"}`,
+      `• Desayuno: ${breakfasts ? `${breakfasts} por día` : "No"}`,
       `• Total estimado: ${mxn(total)} M.N.`,
       promoEligible ? `• Me interesa la tarifa promo pagando por adelantado: ${mxn(promoTotal)} M.N.` : "",
       "",
@@ -145,7 +150,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
       children,
       checkIn: toKey(checkIn),
       checkOut: toKey(checkOut),
-      breakfast,
+      breakfasts,
       name,
       phone,
       notes,
@@ -192,7 +197,7 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
         <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
         <div className="absolute top-3 right-3 rounded-lg bg-white/95 px-3 py-2 text-xs shadow">
           <p className="font-extrabold text-teal">Reserva directa con el hotel</p>
-          <p className="text-ink/70">Confirmamos por WhatsApp o teléfono</p>
+          <p className="text-ink/70">Confirmamos y te enviamos tu link de pago</p>
         </div>
         <h2 className="absolute bottom-10 left-4 font-display text-3xl text-white drop-shadow sm:text-4xl">
           Reserva tu estancia
@@ -364,9 +369,9 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
 
           {sent ? (
             <div className="flex flex-col items-center justify-center rounded-xl bg-teal-light p-6 text-center" role="status">
-              <CircleCheckBig className="size-12 text-teal" aria-hidden="true" />
+              <Clock className="size-12 text-teal" aria-hidden="true" />
               <h3 className="mt-3 font-display text-3xl text-teal">
-                {sent.channel === "directa" ? "¡Reservación recibida!" : "¡Solicitud enviada!"}
+                {sent.channel === "directa" ? "¡Tu reservación está en proceso!" : "¡Solicitud enviada!"}
               </h3>
               {sent.code && (
                 <p className="mt-2 text-ink/80">
@@ -379,8 +384,12 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
                     {room.name} · {checkIn && fmtShort(checkIn)} → {checkOut && fmtShort(checkOut)} · {mxn(total)} M.N.
                   </p>
                   <p className="mt-2 max-w-sm text-sm text-ink/75">
-                    Recepción revisará la disponibilidad y te contactará al <strong>{phone}</strong> para confirmar.
-                    Guarda tu folio para cualquier aclaración.
+                    Recepción está revisando la disponibilidad. Una vez confirmada, te enviaremos por WhatsApp al{" "}
+                    <strong>{phone}</strong> un link de pago para completar tu reservación.
+                  </p>
+                  <p className="mt-3 flex max-w-sm items-start gap-2 rounded-lg bg-white/70 px-3 py-2 text-left text-xs text-ink/70">
+                    <CreditCard className="mt-0.5 size-4 shrink-0 text-teal" aria-hidden="true" />
+                    Tu reservación queda asegurada al realizar el pago. Guarda tu folio para cualquier aclaración.
                   </p>
                   <a
                     href={site.phone.href}
@@ -392,8 +401,8 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
               ) : (
                 <>
                   <p className="mt-2 max-w-sm text-sm text-ink/75">
-                    Abrimos WhatsApp con los datos de tu estancia. Envía el mensaje y recepción te confirmará la
-                    disponibilidad.
+                    Abrimos WhatsApp con los datos de tu estancia. Envía el mensaje y, cuando recepción confirme la
+                    disponibilidad, te enviaremos un link de pago para completar tu reservación.
                   </p>
                   <a
                     href={sent.url}
@@ -428,7 +437,9 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
                 {extraGuests > 0 && (
                   <Row label={`Persona adicional (${extraGuests}) x ${nights} noche${nights !== 1 ? "s" : ""}`} value={mxn(extrasTotal)} />
                 )}
-                {breakfast && <Row label={`Desayuno (${guests}) x ${nights} día${nights !== 1 ? "s" : ""}`} value={mxn(breakfastTotal)} />}
+                {breakfasts > 0 && (
+                  <Row label={`Desayuno (${breakfasts}) x ${nights} día${nights !== 1 ? "s" : ""}`} value={mxn(breakfastTotal)} />
+                )}
                 <div className="flex items-baseline justify-between border-t border-black/10 pt-2">
                   <dt className="font-bold">Total estimado</dt>
                   <dd className="font-heavy text-2xl font-black text-rust">
@@ -450,14 +461,45 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
               <p className="mt-3 rounded-lg bg-sand-light p-3 text-sm text-ink/70">Elige tus fechas para ver el total.</p>
             )}
 
-            <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-lg border-2 border-black/10 px-3 py-2 text-sm has-[:checked]:border-orange has-[:checked]:bg-orange/10">
-              <input type="checkbox" checked={breakfast} onChange={(e) => setBreakfast(e.target.checked)} className="size-4 accent-rust" />
-              <Coffee className="size-5 text-rust" aria-hidden="true" />
-              <span>
-                <span className="font-bold">Agregar desayuno</span>{" "}
-                <span className="text-ink/65">{mxn(breakfastPrice)} por persona, por día</span>
-              </span>
-            </label>
+            {breakfasts > 0 ? (
+              <div className="mt-4 flex items-center gap-3 rounded-lg border-2 border-orange bg-orange/10 px-3 py-2 text-sm">
+                <Coffee className="size-5 shrink-0 text-rust" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="font-bold">
+                    {breakfasts} desayuno{breakfasts !== 1 ? "s" : ""} por día
+                  </span>{" "}
+                  <span className="text-ink/65">{mxn(breakfastPrice)} c/u</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setBreakfastModal(true)}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-teal hover:bg-white"
+                >
+                  <Pencil className="size-3.5" aria-hidden="true" /> Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBreakfasts(0)}
+                  aria-label="Quitar desayuno"
+                  className="grid size-7 place-items-center rounded-md text-rust hover:bg-white"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setBreakfastModal(true)}
+                className="mt-4 flex w-full items-center gap-3 rounded-lg border-2 border-black/10 px-3 py-2 text-left text-sm hover:border-orange"
+              >
+                <Plus className="size-4 text-rust" aria-hidden="true" />
+                <Coffee className="size-5 text-rust" aria-hidden="true" />
+                <span>
+                  <span className="font-bold">Agregar desayuno</span>{" "}
+                  <span className="text-ink/65">{mxn(breakfastPrice)} por persona, por día</span>
+                </span>
+              </button>
+            )}
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Nombre" error={touched ? errors.name : ""}>
@@ -534,13 +576,119 @@ export default function BookingWidget({ initialRoom = "doble" }: { initialRoom?:
             </div>
             <p className="mt-3 flex items-start gap-1.5 text-xs text-ink/60">
               <Check className="mt-0.5 size-3.5 shrink-0 text-teal" aria-hidden="true" />
-              Sin pago en línea: tu reservación queda registrada y recepción te confirma la disponibilidad por teléfono o
-              WhatsApp. Precios en pesos mexicanos (M.N.).
+              No se cobra nada ahora: recepción confirma la disponibilidad y te envía por WhatsApp un link de pago seguro
+              para cerrar tu reservación. Precios en pesos mexicanos (M.N.).
             </p>
           </div>
           )}
         </div>
       </form>
+
+      {breakfastModal && (
+        <BreakfastModal
+          initial={breakfasts || guests}
+          guests={guests}
+          nights={nights}
+          onClose={() => setBreakfastModal(false)}
+          onSave={(n) => {
+            setBreakfasts(n);
+            setBreakfastModal(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Popup para elegir cuántos desayunos por día (de 1 al número de huéspedes). */
+function BreakfastModal({
+  initial,
+  guests,
+  nights,
+  onClose,
+  onSave,
+}: {
+  initial: number;
+  guests: number;
+  nights: number;
+  onClose: () => void;
+  onSave: (n: number) => void;
+}) {
+  const [count, setCount] = useState(Math.min(Math.max(1, initial), guests));
+  const days = Math.max(1, nights);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 sm:items-center"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="breakfast-title"
+        className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-black/10"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Coffee className="size-6 text-rust" aria-hidden="true" />
+            <h3 id="breakfast-title" className="font-display text-2xl text-teal">
+              Agregar desayuno
+            </h3>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded-md p-1 text-ink/60 hover:bg-sand-light">
+            <X className="size-5" />
+          </button>
+        </div>
+        <p className="mt-1 text-sm text-ink/70">
+          ¿Cuántas personas desayunarán? {mxn(breakfastPrice)} por persona, por día.
+        </p>
+
+        <div className="mt-4 rounded-xl bg-sand-light/70 p-4">
+          <Stepper
+            label="Desayunos por día"
+            hint={`Hasta ${guests} (huéspedes de tu reservación)`}
+            value={count}
+            min={1}
+            max={guests}
+            onChange={setCount}
+          />
+        </div>
+
+        <div className="mt-4 flex items-baseline justify-between text-sm">
+          <span className="text-ink/70">
+            {count} x {mxn(breakfastPrice)} x {days} día{days !== 1 ? "s" : ""}
+          </span>
+          <span className="font-heavy text-xl font-black text-rust">{mxn(count * breakfastPrice * days)}</span>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border-2 border-black/15 px-4 py-2.5 text-sm font-bold text-ink hover:bg-sand-light"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(count)}
+            className="rounded-lg bg-rust px-4 py-2.5 text-sm font-bold text-white hover:bg-rust-dark"
+          >
+            Agregar a mi reservación
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

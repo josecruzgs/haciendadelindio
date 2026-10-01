@@ -5,13 +5,15 @@ import { setStatus } from "@/lib/actions/admin";
 import type { Status } from "@/lib/reservations";
 
 const actions: Record<Status, { to: Status; label: string; cls: string }[]> = {
+  // La confirmación normal es con «Confirmar y enviar liga de pago» y la cancelación (con reembolso) en el detalle
   pendiente: [
-    { to: "confirmada", label: "Confirmar", cls: "bg-teal text-white hover:bg-teal-dark" },
-    { to: "cancelada", label: "Cancelar", cls: "bg-white text-rust ring-1 ring-rust/40 hover:bg-rust/10" },
+    { to: "confirmada", label: "Confirmar sin pago en línea", cls: "bg-white text-teal ring-1 ring-teal/40 hover:bg-teal-light" },
+  ],
+  por_pagar: [
+    { to: "confirmada", label: "Pagó en recepción · Confirmar", cls: "bg-white text-teal ring-1 ring-teal/40 hover:bg-teal-light" },
   ],
   confirmada: [
     { to: "completada", label: "Marcar completada", cls: "bg-ink text-white hover:bg-ink/85" },
-    { to: "cancelada", label: "Cancelar", cls: "bg-white text-rust ring-1 ring-rust/40 hover:bg-rust/10" },
   ],
   completada: [{ to: "confirmada", label: "Regresar a confirmada", cls: "bg-white text-ink ring-1 ring-black/15 hover:bg-sand-light" }],
   cancelada: [{ to: "pendiente", label: "Reabrir", cls: "bg-white text-ink ring-1 ring-black/15 hover:bg-sand-light" }],

@@ -24,7 +24,7 @@ export default async function ReservarPage({
   const faqs = [
     {
       q: "¿Cómo se confirma mi reservación?",
-      a: "Al enviar tu solicitud se abre WhatsApp con los datos de tu estancia. Recepción verifica disponibilidad y te confirma por el mismo medio o por teléfono.",
+      a: "Al enviar tu solicitud tu reservación queda en proceso. Recepción verifica la disponibilidad y te envía por WhatsApp un link de pago seguro; al pagar, tu reservación queda confirmada.",
     },
     {
       q: "¿Hay tarifa especial por varias noches?",

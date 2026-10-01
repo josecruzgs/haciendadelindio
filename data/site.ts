@@ -44,3 +44,10 @@ export function whatsappUrl(text?: string) {
   const base = `https://wa.me/${site.whatsapp.number}`;
   return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }
+
+/** Liga de WhatsApp hacia el teléfono de un huésped (10 dígitos → lada 52). */
+export function whatsappTo(phone: string, text: string) {
+  let digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) digits = `52${digits}`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
