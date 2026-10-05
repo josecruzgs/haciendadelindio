@@ -52,6 +52,17 @@ ALTER TABLE reservations ADD COLUMN IF NOT EXISTS refund_ref TEXT;
 ALTER TABLE reservations ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
 UPDATE reservations SET charge_total = amount_due WHERE charge_total IS NULL AND amount_due IS NOT NULL;
 UPDATE reservations SET amount_paid = amount_due WHERE amount_paid IS NULL AND paid_at IS NOT NULL;
+-- Recepción: entrada/salida en mostrador, pagos en recepción y datos de registro del huésped
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMPTZ;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS desk_paid INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS guest_email TEXT;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS guest_id TEXT;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS guest_city TEXT;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS vehicle TEXT;
+-- Reserva automática: apartado mientras el huésped paga y vencimiento
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ;
+ALTER TABLE reservations ADD COLUMN IF NOT EXISTS expired_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS reservations_status_idx ON reservations (status);
 CREATE INDEX IF NOT EXISTS reservations_check_in_idx ON reservations (check_in);
 
@@ -75,6 +86,35 @@ CREATE TABLE IF NOT EXISTS blocked_dates (
   end_date    DATE NOT NULL,
   reason      TEXT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Habitaciones físicas del hotel (número, tipo y estado de limpieza)
+CREATE TABLE IF NOT EXISTS hotel_rooms (
+  id            SERIAL PRIMARY KEY,
+  number        TEXT NOT NULL UNIQUE,
+  type          TEXT NOT NULL,
+  housekeeping  TEXT NOT NULL DEFAULT 'limpia',
+  notes         TEXT,
+  active        BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Habitación(es) asignada(s) a cada reservación
+CREATE TABLE IF NOT EXISTS room_assignments (
+  reservation_id  INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+  room_id         INTEGER NOT NULL REFERENCES hotel_rooms(id) ON DELETE CASCADE,
+  PRIMARY KEY (reservation_id, room_id)
+);
+CREATE INDEX IF NOT EXISTS room_assignments_room_idx ON room_assignments (room_id);
+
+-- Pagos recibidos en recepción (efectivo, tarjeta, transferencia)
+CREATE TABLE IF NOT EXISTS desk_payments (
+  id              SERIAL PRIMARY KEY,
+  reservation_id  INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+  amount          INTEGER NOT NULL,
+  method          TEXT NOT NULL,
+  note            TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 `;
 

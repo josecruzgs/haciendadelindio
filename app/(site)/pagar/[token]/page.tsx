@@ -7,6 +7,8 @@ import { site, whatsappUrl } from "@/data/site";
 import { fmtKeyCap } from "@/lib/dates";
 import { balanceDue, getReservationByToken, type Reservation } from "@/lib/reservations";
 import { settleSession, stripe, stripeEnabled } from "@/lib/stripe";
+import { holdLabel } from "@/lib/templates";
+import { sweepHolds } from "@/lib/holds";
 import PayButton from "./PayButton";
 
 export const metadata: Metadata = {
@@ -25,6 +27,7 @@ export default async function PayPage({
 }) {
   const { token } = await params;
   const { session_id } = await searchParams;
+  await sweepHolds();
   let r = await getReservationByToken(token);
   if (!r) notFound();
 
@@ -43,7 +46,15 @@ export default async function PayPage({
   return (
     <section className="bg-sand-light px-4 py-12 sm:py-16">
       <div className="mx-auto max-w-xl rounded-2xl bg-white p-6 shadow-xl ring-1 ring-black/5 sm:p-8">
-        {r.status === "cancelada" ? (
+        {r.status === "cancelada" && r.expired_at && !r.paid_at ? (
+          <Header icon={<Clock className="size-12 text-rust" />} title="El apartado venció">
+            No recibimos el pago a tiempo y la habitación se liberó.{" "}
+            <a href="/reservar" className="font-bold text-teal underline underline-offset-4">
+              Reserva de nuevo
+            </a>{" "}
+            o escríbenos y con gusto te ayudamos.
+          </Header>
+        ) : r.status === "cancelada" ? (
           <Header icon={<XCircle className="size-12 text-rust" />} title="Reservación cancelada">
             {r.refunded_amount > 0
               ? `Te reembolsamos ${mxn(r.refunded_amount)} M.N. a tu tarjeta; puede tardar de 5 a 10 días hábiles en reflejarse.`
@@ -60,6 +71,9 @@ export default async function PayPage({
         ) : r.status === "por_pagar" ? (
           <Header icon={<Lock className="size-12 text-teal" />} title="Completa tu reservación">
             ¡Tenemos disponibilidad para ti! Realiza tu pago para confirmar tu reservación.
+            {r.hold_until && (
+              <strong className="mt-2 block text-rust">Tu habitación está apartada hasta las {holdLabel(r.hold_until)}.</strong>
+            )}
           </Header>
         ) : (
           <Header icon={<Clock className="size-12 text-orange" />} title="Reservación en proceso">

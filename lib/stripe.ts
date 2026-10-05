@@ -2,7 +2,7 @@ import "server-only";
 import Stripe from "stripe";
 import { headers } from "next/headers";
 import { getRoom } from "@/data/rooms";
-import { markPaid, saveCheckoutSession, type Reservation } from "./reservations";
+import { extendHold, markPaid, saveCheckoutSession, type Reservation } from "./reservations";
 
 /**
  * Pagos con Stripe Checkout (página de pago alojada por Stripe).
@@ -57,7 +57,16 @@ export async function checkoutUrl(r: Reservation) {
 
   const base = await siteUrl();
   const room = getRoom(r.room);
+  // Reserva automática: la sesión vence con el apartado (Stripe pide de 30 min a 24 h desde ahora)
+  let expiresAt: number | undefined;
+  if (r.hold_until) {
+    const min = Date.now() + 31 * 60_000;
+    const until = Math.min(Math.max(Date.parse(r.hold_until), min), Date.now() + 23.5 * 3_600_000);
+    expiresAt = Math.floor(until / 1000);
+    if (until > Date.parse(r.hold_until)) await extendHold(r.id, new Date(until).toISOString());
+  }
   const session = await s.checkout.sessions.create({
+    ...(expiresAt ? { expires_at: expiresAt } : {}),
     mode: "payment",
     currency: "mxn",
     locale: "es",

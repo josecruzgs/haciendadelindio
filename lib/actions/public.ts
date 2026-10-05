@@ -2,13 +2,27 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { randomBytes } from "node:crypto";
 import { rateLimited } from "../auth";
 import { isDateKey, nightsBetweenKeys, todayKey } from "../dates";
 import { quote } from "../pricing";
 import { getPricedRoom, getPricing } from "../catalog";
 import { normalizePhone, type PhoneCountry } from "@/data/phone";
-import { getReservationByToken, insertReservation, isRangeBlocked } from "../reservations";
-import { checkoutUrl, stripeEnabled } from "../stripe";
+import {
+  deleteReservation,
+  getReservation,
+  getReservationByToken,
+  HOLD_GRACE_MIN,
+  insertReservation,
+  isRangeBlocked,
+  startHold,
+} from "../reservations";
+import { checkoutUrl, payUrl, siteUrl, stripeEnabled } from "../stripe";
+import { autoBookingFor, freeCount, inventory } from "../availability";
+import { autoAssign } from "../frontdesk";
+import { computeCharge, getSettings, STRIPE_MIN_MXN } from "../settings";
+import { sweepHolds } from "../holds";
+import { rooms as roomTypes, type Room } from "@/data/rooms";
 
 export type BookingInput = {
   /** "directa" = botón Reservar ahora; "whatsapp" = también abre WhatsApp. */
@@ -31,8 +45,27 @@ export type BookingInput = {
 };
 
 export type BookingResult =
-  | { ok: true; code: string; total: number; promoTotal: number | null }
+  | {
+      ok: true;
+      code: string;
+      total: number;
+      promoTotal: number | null;
+      /** Reserva automática: liga de pago (/pagar/…) y, si se pudo crear, la página de Stripe para pagar ya. */
+      payUrl?: string;
+      checkoutUrl?: string;
+    }
   | { ok: false; error: string; retryable?: boolean };
+
+/** "Disponible: Doble, Triple." para sugerir otra opción cuando el tipo elegido está lleno. */
+async function alternatives(except: Room["slug"], checkIn: string, checkOut: string, rooms: number, guests: number) {
+  const inv = await inventory();
+  const ok: string[] = [];
+  for (const t of roomTypes) {
+    if (t.slug === except || !inv[t.slug] || t.maxGuests * rooms < guests) continue;
+    if ((await freeCount(t.slug, checkIn, checkOut)) >= rooms && !(await isRangeBlocked(t.slug, checkIn, checkOut))) ok.push(t.cardName);
+  }
+  return ok.length ? ` Sí tenemos disponible: ${ok.join(", ")}.` : " Prueba con otras fechas.";
+}
 
 const MAX_NIGHTS = 60;
 const MAX_ROOMS = 10;
@@ -69,8 +102,17 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
     if (await isRangeBlocked(room.slug, input.checkIn, input.checkOut)) {
       return { ok: false, error: "Algunas de esas noches ya no tienen disponibilidad para esta habitación. Elige otras fechas." };
     }
-    const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts: int(input.breakfasts) || 0 }, await getPricing());
-    const { code } = await insertReservation({
+    await sweepHolds();
+    const pricing = await getPricing();
+    const auto = await autoBookingFor(room.slug);
+    const unavailable = async () => ({
+      ok: false as const,
+      error: `Ya no tenemos ${rooms > 1 ? `${rooms} habitaciones` : "habitación"} ${room.cardName.toLowerCase()} disponible${rooms > 1 ? "s" : ""} en esas fechas.${await alternatives(room.slug, input.checkIn, input.checkOut, rooms, adults + children)}`,
+    });
+    if (auto.on && (await freeCount(room.slug, input.checkIn, input.checkOut)) < rooms) return await unavailable();
+
+    const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts: int(input.breakfasts) || 0 }, pricing);
+    const { id, code } = await insertReservation({
       status: "pendiente",
       source: "web",
       channel: input.channel === "directa" ? "directa" : "whatsapp",
@@ -88,7 +130,30 @@ export async function createReservation(input: BookingInput): Promise<BookingRes
       phone,
       notes: notes || null,
     });
-    return { ok: true, code, total: q.total, promoTotal: q.promoEligible ? q.promoTotal : null };
+    const base = { ok: true as const, code, total: q.total, promoTotal: q.promoEligible ? q.promoTotal : null };
+    if (!auto.on) return base; // flujo manual: recepción revisa y envía la liga
+
+    // Si otro huésped tomó la última habitación al mismo tiempo, gana la reservación que se guardó primero
+    if ((await freeCount(room.slug, input.checkIn, input.checkOut, { upToId: id })) < 0) {
+      await deleteReservation(id);
+      return await unavailable();
+    }
+    const { advance } = await getSettings();
+    const amounts = computeCharge(advance, { total: q.total, promo_total: q.promoEligible ? q.promoTotal : null }, pricing.promo.enabled);
+    if (amounts.due < STRIPE_MIN_MXN) return base;
+    const token = await startHold(id, randomBytes(24).toString("base64url"), amounts, auto.booking.holdMinutes);
+    await autoAssign(id, room.slug, input.checkIn, input.checkOut, rooms);
+    const r = await getReservation(id);
+    if (!r || !token) return base;
+
+    const link = payUrl(await siteUrl(), token);
+    let checkout: string | undefined;
+    try {
+      checkout = await checkoutUrl(r);
+    } catch (e) {
+      console.error("[stripe] no se pudo crear la sesión de pago automática", e);
+    }
+    return { ...base, payUrl: link, checkoutUrl: checkout };
   } catch (e) {
     console.error("[reservas] no se pudo guardar la solicitud", e);
     return { ok: false, error: "No pudimos registrar la solicitud.", retryable: true };
@@ -104,9 +169,14 @@ export async function startPayment(token: string, _: PayState): Promise<PayState
   const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (rateLimited(`pay:${ip}`, 20, 60 * 60_000)) return { error: "Demasiados intentos. Intenta más tarde." };
 
+  await sweepHolds();
   const r = await getReservationByToken(token);
   if (!r || r.paid_at) return { error: "Esta liga de pago ya no está disponible." };
+  if (r.status === "cancelada" && r.expired_at) return { error: "El apartado de esta reservación venció. Puedes reservar de nuevo en nuestra página." };
   if (r.status !== "por_pagar") return { error: "Esta reservación no tiene un pago pendiente." };
+  if (r.hold_until && Date.parse(r.hold_until) + HOLD_GRACE_MIN * 60_000 < Date.now()) {
+    return { error: "El apartado de esta reservación venció. Puedes reservar de nuevo en nuestra página." };
+  }
   if (!stripeEnabled()) return { error: "El pago en línea no está disponible por el momento. Contáctanos por WhatsApp." };
 
   let url: string;

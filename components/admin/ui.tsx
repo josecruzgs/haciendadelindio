@@ -6,6 +6,7 @@ export const statusMeta: Record<Status, { label: string; cls: string }> = {
   pendiente: { label: "Pendiente", cls: "bg-orange/20 text-rust-dark ring-orange/40" },
   por_pagar: { label: "Esperando pago", cls: "bg-white text-teal ring-teal/50" },
   confirmada: { label: "Confirmada", cls: "bg-teal-light text-teal ring-teal/30" },
+  hospedado: { label: "Hospedado", cls: "bg-teal-dark text-white ring-teal-dark" },
   completada: { label: "Completada", cls: "bg-ink/10 text-ink ring-ink/20" },
   cancelada: { label: "Cancelada", cls: "bg-rust/10 text-rust line-through ring-rust/20" },
 };

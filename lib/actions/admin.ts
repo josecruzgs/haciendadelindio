@@ -5,14 +5,15 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { checkCredentials, createSession, destroySession, rateLimited, requireAdmin } from "../auth";
-import { isDateKey, nightsBetweenKeys } from "../dates";
+import { isDateKey, nightsBetweenKeys, todayKey } from "../dates";
+import { addDeskPayment, assignRoom, freeRooms, markCheckedIn, PAY_METHODS, saveGuestData, type PayMethod } from "../frontdesk";
 import { quote, roomBySlug } from "../pricing";
 import { getPricedRoom, getPricing, savePricing } from "../catalog";
 import { countOld, cutoffKey, getCleanup, MAX_MONTHS, MIN_MONTHS, purgeOld, saveCleanup } from "../cleanup";
 import { normalizePhone, type PhoneCountry } from "@/data/phone";
 import { DEFAULT_PRICING, mxn, type Pricing } from "@/data/rooms";
 import { whatsappTo } from "@/data/site";
-import { computeCharge, getSettings, saveSetting, STRIPE_MIN_MXN, type AdvanceSettings } from "../settings";
+import { computeCharge, getSettings, MAX_HOLD, MIN_HOLD, saveSetting, STRIPE_MIN_MXN, type AdvanceSettings, type BookingSettings } from "../settings";
 import { expireOpenSession, payUrl, refundPayment, siteUrl, stripeEnabled } from "../stripe";
 import { renderTemplate, reservationVars, type Template } from "../templates";
 import {
@@ -59,7 +60,8 @@ export async function logout() {
 export async function setStatus(id: number, status: Status) {
   await requireAdmin();
   // Cancelar va por cancelReservation (invalida la liga y permite reembolsar)
-  if (!STATUSES.includes(status) || status === "cancelada") return;
+  // Cancelar va por cancelReservation; la entrada (hospedado) por checkIn en recepción
+  if (!STATUSES.includes(status) || status === "cancelada" || status === "hospedado") return;
   await updateReservation(id, { status });
   revalidatePath("/admin", "layout");
 }
@@ -114,6 +116,11 @@ export async function cancelReservation(id: number, refundAmount: number): Promi
     return { ok: false, error: "Stripe rechazó la operación; la reservación no se canceló. Intenta de nuevo o revisa el Dashboard de Stripe." };
   }
 
+  return cancelMessage(r, amount);
+}
+
+/** Liga de WhatsApp con el mensaje de cancelación/reembolso para el huésped. */
+async function cancelMessage(r: NonNullable<Awaited<ReturnType<typeof getReservation>>>, amount: number): Promise<CancelResult> {
   const { templates } = await getSettings();
   const tpl = templates.find((t) => t.id === "cancelacion")!;
   revalidatePath("/admin", "layout");
@@ -133,10 +140,7 @@ export async function refundReservation(id: number, refundAmount: number): Promi
     console.error("[stripe] no se pudo reembolsar", e);
     return { ok: false, error: "Stripe rechazó el reembolso. Revisa el Dashboard de Stripe." };
   }
-  const { templates } = await getSettings();
-  const tpl = templates.find((t) => t.id === "cancelacion")!;
-  revalidatePath("/admin", "layout");
-  return { ok: true, waUrl: whatsappTo(r.phone, renderTemplate(tpl.text, reservationVars(r, { reembolso: amount }))) };
+  return cancelMessage(r, amount);
 }
 
 export async function saveAdminNotes(id: number, _: FormState, fd: FormData): Promise<FormState> {
@@ -155,7 +159,12 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
   const adults = num(fd, "adults");
   const children = num(fd, "children") || 0;
   const breakfasts = Math.max(0, num(fd, "breakfasts") || 0);
-  const status = str(fd, "status") as Status;
+  const walkIn = fd.get("walkin") === "on";
+  const status = walkIn ? "confirmada" : (str(fd, "status") as Status);
+  const roomIds = [...new Set(fd.getAll("room_ids").map((v) => Number(v)).filter(Number.isInteger))];
+  const paidNow = Math.round(Number(str(fd, "paid_now") || 0));
+  const payMethod = str(fd, "pay_method") as PayMethod;
+  const email = str(fd, "guest_email").slice(0, 120) || null;
   const name = str(fd, "name").slice(0, 120);
   const rawPhone = str(fd, "phone").slice(0, 30);
   const phone = rawPhone ? normalizePhone(str(fd, "phone_country") as PhoneCountry, rawPhone) : "";
@@ -170,7 +179,19 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
   }
   if (name.length < 2) return { error: "Escribe el nombre del huésped." };
   if (phone === null) return { error: "El teléfono debe tener 10 dígitos (México o Estados Unidos)." };
-  if (!STATUSES.includes(status)) return { error: "Estado no válido." };
+  if (!STATUSES.includes(status) || !["pendiente", "confirmada"].includes(status)) return { error: "Estado no válido." };
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Correo no válido." };
+  if (walkIn) {
+    if (checkIn !== todayKey()) return { error: "Una llegada en mostrador entra hoy: revisa la fecha de entrada." };
+    if (roomIds.length !== rooms) return { error: `Elige ${rooms === 1 ? "la habitación" : `las ${rooms} habitaciones`} donde se hospeda.` };
+  }
+  if (roomIds.length > rooms) return { error: `Elegiste ${roomIds.length} habitaciones para una reservación de ${rooms}.` };
+  if (roomIds.length) {
+    const free = new Set((await freeRooms(room.slug, checkIn, checkOut)).map((h) => h.id));
+    if (roomIds.some((rid) => !free.has(rid))) return { error: "Alguna de las habitaciones elegidas ya está ocupada en esas fechas." };
+  }
+  if (!(paidNow >= 0)) return { error: "Revisa el pago recibido." };
+  if (paidNow > 0 && !PAY_METHODS.includes(payMethod)) return { error: "Elige la forma de pago." };
 
   const q = quote(room, { nights, roomCount: rooms, guests: adults + children, breakfasts }, await getPricing());
   const customTotal = num(fd, "total");
@@ -193,6 +214,19 @@ export async function createManualReservation(_: FormState, fd: FormData): Promi
     notes: str(fd, "notes").slice(0, 1000) || null,
     admin_notes: str(fd, "admin_notes").slice(0, 2000) || null,
   });
+  await saveGuestData(id, {
+    name,
+    phone,
+    guest_email: email,
+    guest_id: str(fd, "guest_id").slice(0, 80) || null,
+    guest_city: str(fd, "guest_city").slice(0, 80) || null,
+    vehicle: str(fd, "vehicle").slice(0, 80) || null,
+  });
+  const assigned = [];
+  for (const rid of roomIds) if (await assignRoom(id, rid)) assigned.push(rid);
+  if (paidNow > 0) await addDeskPayment(id, paidNow, payMethod, walkIn ? "Pago al registrar la llegada" : null);
+  // Si otra recepción tomó la habitación al mismo tiempo, se queda confirmada para asignarla en el detalle
+  if (walkIn && assigned.length === roomIds.length) await markCheckedIn(id);
   revalidatePath("/admin", "layout");
   redirect(`/admin/reservaciones/${id}`);
 }
@@ -234,6 +268,18 @@ export async function saveAdvanceSettings(_: FormState, fd: FormData): Promise<F
   } satisfies AdvanceSettings);
   revalidatePath("/admin", "layout");
   return { ok: "Ajustes de pago guardados. Aplican a las ligas que envíes desde ahora." };
+}
+
+export async function saveBookingSettings(_: FormState, fd: FormData): Promise<FormState> {
+  await requireAdmin();
+  const holdMinutes = Number(str(fd, "holdMinutes"));
+  if (!(Number.isInteger(holdMinutes) && holdMinutes >= MIN_HOLD && holdMinutes <= MAX_HOLD)) {
+    return { error: `El apartado debe ser de ${MIN_HOLD} a ${MAX_HOLD} minutos.` };
+  }
+  const auto = fd.get("auto") === "on";
+  await saveSetting("booking", { auto, holdMinutes } satisfies BookingSettings);
+  revalidatePath("/", "layout");
+  return { ok: auto ? "Reserva automática activada." : "Reserva automática desactivada: recepción confirma cada solicitud." };
 }
 
 export async function saveTemplates(_: FormState, fd: FormData): Promise<FormState> {

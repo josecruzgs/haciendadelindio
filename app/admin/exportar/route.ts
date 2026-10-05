@@ -15,16 +15,22 @@ export async function GET(req: Request) {
     `SELECT code AS folio, status AS estado, channel AS canal, room AS habitacion, rooms AS habitaciones,
             adults AS adultos, children AS ninos, check_in::text AS entrada, check_out::text AS salida, nights AS noches,
             breakfasts AS desayunos_por_dia, total, promo_total AS total_promo, charge_total AS total_acordado,
-            amount_paid AS pagado, refunded_amount AS reembolsado, payment_ref AS pago_stripe,
-            name AS nombre, phone AS telefono, notes AS comentarios, admin_notes AS notas_internas,
+            amount_paid AS pagado, refunded_amount AS reembolsado, payment_ref AS pago_stripe, desk_paid AS pagado_recepcion,
+            (SELECT STRING_AGG(h.number, ' ' ORDER BY h.number) FROM room_assignments a JOIN hotel_rooms h ON h.id = a.room_id
+             WHERE a.reservation_id = reservations.id) AS num_habitacion,
+            to_char(checked_in_at AT TIME ZONE 'America/Tijuana', 'YYYY-MM-DD HH24:MI') AS registro_entrada,
+            to_char(checked_out_at AT TIME ZONE 'America/Tijuana', 'YYYY-MM-DD HH24:MI') AS registro_salida,
+            name AS nombre, phone AS telefono, guest_email AS correo, guest_id AS identificacion, guest_city AS procedencia,
+            vehicle AS vehiculo, notes AS comentarios, admin_notes AS notas_internas,
             to_char(created_at AT TIME ZONE 'America/Tijuana', 'YYYY-MM-DD HH24:MI') AS creada
      FROM reservations ${filter ? "WHERE check_out < $1::date" : ""} ORDER BY check_in`,
     filter ? [antes] : [],
   );
   const cols = [
     "folio", "estado", "canal", "habitacion", "habitaciones", "adultos", "ninos", "entrada", "salida", "noches",
-    "desayunos_por_dia", "total", "total_promo", "total_acordado", "pagado", "reembolsado", "pago_stripe",
-    "nombre", "telefono", "comentarios", "notas_internas", "creada",
+    "desayunos_por_dia", "total", "total_promo", "total_acordado", "pagado", "reembolsado", "pago_stripe", "pagado_recepcion",
+    "num_habitacion", "registro_entrada", "registro_salida", "nombre", "telefono", "correo", "identificacion", "procedencia",
+    "vehiculo", "comentarios", "notas_internas", "creada",
   ];
   const cell = (v: unknown) => {
     const s = v == null ? "" : String(v);

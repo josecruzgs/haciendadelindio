@@ -4,6 +4,7 @@ import BookingWidget from "@/components/booking/BookingWidget";
 import { WhatsAppIcon } from "@/components/BrandIcons";
 import { getRoom, mxn, withPricing, type Room } from "@/data/rooms";
 import { getPricing } from "@/lib/catalog";
+import { publicAutoBooking } from "@/lib/availability";
 import { site } from "@/data/site";
 
 export const metadata: Metadata = {
@@ -21,14 +22,16 @@ export default async function ReservarPage({
   const { habitacion } = await searchParams;
   const initial: Room["slug"] = getRoom(habitacion ?? "")?.slug ?? "doble";
 
-  const pricing = await getPricing();
+  const [pricing, autoBooking] = await Promise.all([getPricing(), publicAutoBooking()]);
   const { breakfastPrice, extraPersonFee } = pricing;
   const rooms = withPricing(pricing);
   const promoList = rooms.map((r) => `${r.cardName} ${mxn(r.promoPrice)}`).join(", ");
   const faqs = [
     {
       q: "¿Cómo se confirma mi reservación?",
-      a: "Al enviar tu solicitud tu reservación queda en proceso. Recepción verifica la disponibilidad y te envía por WhatsApp un link de pago seguro; al pagar, tu reservación queda confirmada.",
+      a: autoBooking
+        ? "Si hay disponibilidad en tus fechas, apartamos tu habitación y pasas directo al pago seguro con tarjeta. Al pagar, tu reservación queda confirmada al instante."
+        : "Al enviar tu solicitud tu reservación queda en proceso. Recepción verifica la disponibilidad y te envía por WhatsApp un link de pago seguro; al pagar, tu reservación queda confirmada.",
     },
     {
       q: "¿Hay tarifa especial por varias noches?",
@@ -49,7 +52,7 @@ export default async function ReservarPage({
         <div className="tipi-divider" aria-hidden="true" />
         <div className="mx-auto max-w-4xl px-3 pt-8 pb-14 sm:px-4">
           <h1 className="mb-6 text-center font-display text-4xl text-teal-dark md:text-5xl">Reservaciones</h1>
-          <BookingWidget key={initial} initialRoom={initial} pricing={pricing} />
+          <BookingWidget key={initial} initialRoom={initial} pricing={pricing} autoBooking={autoBooking} />
         </div>
       </section>
 

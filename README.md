@@ -28,7 +28,23 @@ npm run dev                  # http://localhost:3000
 
 Las tablas se crean solas en la primera conexión.
 
-## Cómo funcionan las reservaciones
+## Reserva automática
+
+Con la opción activada en `/admin/ajustes` → **Reserva automática**, Stripe configurado y habitaciones dadas de alta
+en Recepción, el sitio ya no espera confirmación manual:
+
+1. El calendario público tacha las noches en que no queda ninguna habitación de ese tipo (además de los bloqueos).
+2. Al tocar **Reservar y pagar** el servidor revisa la disponibilidad real; si hay lugar guarda la reservación como
+   **Esperando pago**, asigna habitación, aparta el lugar por los minutos configurados (60 por defecto) y manda al
+   huésped directo a Stripe Checkout. Si dos huéspedes reservan la última habitación al mismo tiempo, gana el primero.
+3. Al pagar se confirma sola (webhook de Stripe). Si no paga a tiempo, el apartado vence: se cancela, se libera la
+   habitación y la liga deja de funcionar (la sesión de Stripe vence al mismo tiempo). Los apartados vencidos se
+   liberan solos al consultar disponibilidad, al reservar, al abrir la liga de pago o al abrir el panel.
+5. La liga de pago (`/pagar/<token>`) sirve también para enviarla por WhatsApp desde el detalle si el huésped no
+   terminó de pagar («Reenviar liga de pago»).
+4. Los tipos sin habitaciones dadas de alta (o con la opción apagada) siguen el flujo manual de abajo.
+
+## Cómo funcionan las reservaciones (flujo manual)
 
 1. El huésped llena el widget (puede **agregar desayuno** eligiendo en un popup cuántos desayunos por día, de 1 al
    número de huéspedes) y elige:
@@ -60,6 +76,25 @@ Las tablas se crean solas en la primera conexión.
    hace más de N meses (3 por defecto), con respaldo CSV previo, o activar la limpieza automática (una vez al día).
 9. En `/admin/disponibilidad` se bloquean noches (todas las habitaciones o un tipo); el calendario público las
    muestra tachadas y el servidor rechaza solicitudes en esas fechas.
+
+## Recepción (control de habitaciones)
+
+1. **Habitaciones del hotel** (`/admin/recepcion/habitaciones`): se dan de alta los números y su tipo (sencilla,
+   doble, triple), por rango (`1-10`) o sueltos (`12, 14, 20A`). Una habitación con historial no se borra: se da de baja.
+2. **Recepción** (`/admin/recepcion`, vista por día): rack con el estado de cada habitación (ocupada, sale, llega,
+   reservada, libre) y su limpieza (limpia, sucia, mantenimiento), más las llegadas y salidas pendientes del día
+   (incluye llegadas atrasadas y salidas vencidas). Con las flechas o el selector se ve cualquier otro día.
+3. **Calendario** (`/admin/calendario`, vista por mes): habitaciones × días con cada estancia como barra (color por
+   estado) y el total de ocupadas por noche. Las reservaciones sin habitación aparecen como «Sin asignar» en su tipo.
+4. **Asignar habitación**: en el detalle de la reservación → tarjeta «Recepción»; solo se ofrecen las habitaciones
+   libres de ese tipo para esas fechas (el servidor también lo valida para que no se encimen).
+5. **Entrada (check-in)**: con la(s) habitación(es) asignada(s) y la fecha de entrada ya llegada, la reservación pasa
+   a **Hospedado**. Los datos de registro (identificación, procedencia, correo, vehículo/placas) se capturan ahí.
+6. **Llegada sin reservación (walk-in)**: botón «Llegada sin reservación» o «Registrar llegada» en una habitación
+   libre del rack; se elige la habitación, se capturan los datos y el pago recibido, y queda hospedado al guardar.
+7. **Pagos en recepción** (efectivo, tarjeta, transferencia) se registran en el detalle y se descuentan del saldo.
+8. **Salida (check-out)**: pide saldar la cuenta (o confirmar la salida con saldo pendiente); la reservación pasa a
+   **Completada** y la habitación a «sucia». Se puede deshacer si se registró por error.
 
 ### Configurar Stripe
 

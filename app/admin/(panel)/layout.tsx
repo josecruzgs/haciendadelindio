@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { logout } from "@/lib/actions/admin";
 import { query } from "@/lib/db";
 import { maybeAutoPurge } from "@/lib/cleanup";
+import { sweepHolds } from "@/lib/holds";
 import AdminNav from "./AdminNav";
 import AutoRefresh from "./AutoRefresh";
 
@@ -22,6 +23,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   let dbError: string | null = null;
   try {
     await maybeAutoPurge(); // limpieza automática, como máximo una vez al día
+    await sweepHolds(); // apartados de reserva automática que vencieron sin pago
     [{ n: pending }] = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM reservations WHERE status = 'pendiente'`);
   } catch (e) {
     // Mostrar la causa al administrador en vez del error genérico de Next

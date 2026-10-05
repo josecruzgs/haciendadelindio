@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
-import { getSettings } from "@/lib/settings";
+import { getBooking, getSettings } from "@/lib/settings";
+import { inventory } from "@/lib/availability";
+import { rooms as roomTypes } from "@/data/rooms";
+import Link from "next/link";
+import { BookingForm } from "./AutomationForms";
 import { getPricing } from "@/lib/catalog";
 import { stripeKeyLooksValid } from "@/lib/stripe";
 import { dbUsage, getCleanup } from "@/lib/cleanup";
@@ -15,8 +19,18 @@ export const metadata: Metadata = { title: "Ajustes" };
 
 export default async function SettingsPage() {
   await requireAdmin();
-  const [{ advance, templates }, pricing, usage, cleanup] = await Promise.all([getSettings(), getPricing(), dbUsage(), getCleanup()]);
   const key = process.env.STRIPE_SECRET_KEY ?? "";
+  const [{ advance, templates }, pricing, usage, cleanup, booking, inv] = await Promise.all([
+    getSettings(), getPricing(), dbUsage(), getCleanup(), getBooking(), inventory(),
+  ]);
+  const autoChecks = [
+    { ok: booking.auto, label: booking.auto ? "Reserva automática activada" : "Reserva automática apagada (confirmación manual)" },
+    { ok: Boolean(key) && stripeKeyLooksValid(), label: key ? "Stripe configurado" : "Falta Stripe: sin él las reservaciones llegan como pendientes" },
+    ...roomTypes.map((t) => ({
+      ok: inv[t.slug] > 0,
+      label: inv[t.slug] > 0 ? `${t.name}: ${inv[t.slug]} habitaciones` : `${t.name}: sin habitaciones dadas de alta (se confirma a mano)`,
+    })),
+  ];
   const checks = [
     {
       ok: Boolean(key) && stripeKeyLooksValid(),
@@ -47,6 +61,31 @@ export default async function SettingsPage() {
               Tarifas que se muestran en el sitio y con las que se cotiza cada reservación, y el descuento por pagar en línea.
             </p>
             <PricesForm pricing={pricing} />
+          </Card>
+          <Card>
+            <h2 id="reserva-automatica" className="scroll-mt-4 font-display text-2xl text-teal">
+              Reserva automática
+            </h2>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {autoChecks.map((c) => (
+                <li key={c.label} className="flex items-start gap-2">
+                  {c.ok ? (
+                    <CircleCheck className="mt-0.5 size-4 shrink-0 text-teal" aria-hidden="true" />
+                  ) : (
+                    <CircleAlert className="mt-0.5 size-4 shrink-0 text-rust" aria-hidden="true" />
+                  )}
+                  {c.label}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-ink/55">
+              Las habitaciones se administran en{" "}
+              <Link href="/admin/recepcion/habitaciones" className="font-bold text-teal underline">
+                Recepción → Administrar
+              </Link>
+              .
+            </p>
+            <BookingForm initial={booking} />
           </Card>
           <Card>
             <h2 className="font-display text-2xl text-teal">Pago por adelantado</h2>

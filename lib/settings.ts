@@ -39,7 +39,27 @@ export async function getSettings(): Promise<Settings> {
   return { advance, templates };
 }
 
-export async function saveSetting(key: "advance" | "templates", value: unknown) {
+/** Reserva automática: si hay disponibilidad, el huésped paga en línea y se confirma sola. */
+export type BookingSettings = {
+  auto: boolean;
+  /** Minutos que se aparta la habitación mientras el huésped paga (Stripe pide de 30 a 1440). */
+  holdMinutes: number;
+};
+
+export const DEFAULT_BOOKING: BookingSettings = { auto: true, holdMinutes: 60 };
+export const MIN_HOLD = 30;
+export const MAX_HOLD = 1440;
+
+export async function getBooking(): Promise<BookingSettings> {
+  const [row] = await query<{ value: string }>(`SELECT value FROM settings WHERE key = 'booking'`);
+  try {
+    return { ...DEFAULT_BOOKING, ...(row ? (JSON.parse(row.value) as Partial<BookingSettings>) : {}) };
+  } catch {
+    return DEFAULT_BOOKING;
+  }
+}
+
+export async function saveSetting(key: "advance" | "templates" | "booking", value: unknown) {
   await query(
     `INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,

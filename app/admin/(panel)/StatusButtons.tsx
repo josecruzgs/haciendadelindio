@@ -12,9 +12,11 @@ const actions: Record<Status, { to: Status; label: string; cls: string }[]> = {
   por_pagar: [
     { to: "confirmada", label: "Pagó en recepción · Confirmar", cls: "bg-white text-teal ring-1 ring-teal/40 hover:bg-teal-light" },
   ],
+  // La entrada y la salida se registran en la tarjeta «Recepción» del detalle
   confirmada: [
-    { to: "completada", label: "Marcar completada", cls: "bg-ink text-white hover:bg-ink/85" },
+    { to: "completada", label: "Cerrar sin registrar estancia", cls: "bg-white text-ink ring-1 ring-black/15 hover:bg-sand-light" },
   ],
+  hospedado: [],
   completada: [{ to: "confirmada", label: "Regresar a confirmada", cls: "bg-white text-ink ring-1 ring-black/15 hover:bg-sand-light" }],
   cancelada: [{ to: "pendiente", label: "Reabrir", cls: "bg-white text-ink ring-1 ring-black/15 hover:bg-sand-light" }],
 };

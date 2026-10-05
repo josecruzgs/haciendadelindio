@@ -17,7 +17,16 @@ type Popover = "dates" | "guests" | null;
 type Channel = "directa" | "whatsapp";
 const MAX_ROOMS = 10;
 
-export default function BookingWidget({ initialRoom = "doble", pricing }: { initialRoom?: Room["slug"]; pricing: Pricing }) {
+export default function BookingWidget({
+  initialRoom = "doble",
+  pricing,
+  autoBooking = null,
+}: {
+  initialRoom?: Room["slug"];
+  pricing: Pricing;
+  /** Reserva automática activa: si hay disponibilidad se aparta la habitación y se paga en línea. */
+  autoBooking?: { holdMinutes: number } | null;
+}) {
   // Precios vigentes (editables desde el panel)
   const rooms = useMemo(() => withPricing(pricing), [pricing]);
   const { breakfastPrice, extraPersonFee } = pricing;
@@ -41,7 +50,7 @@ export default function BookingWidget({ initialRoom = "doble", pricing }: { init
   const [website, setWebsite] = useState(""); // campo trampa anti-spam
   const [serverError, setServerError] = useState("");
   const [sending, setSendingMode] = useState<Channel | null>(null);
-  const [sent, setSent] = useState<{ code: string; url: string; channel: Channel } | null>(null);
+  const [sent, setSent] = useState<{ code: string; url: string; channel: Channel; payUrl?: string } | null>(null);
   const [availability, setAvailability] = useState<Record<string, string[]>>({});
 
   const boxRef = useRef<HTMLDivElement>(null);
@@ -178,7 +187,13 @@ export default function BookingWidget({ initialRoom = "doble", pricing }: { init
         );
         return;
       }
-      setSent({ code: res.code, url: whatsappUrl(message(res.code)), channel });
+      // Reserva automática: directo a la página de pago de Stripe
+      if (res.checkoutUrl) {
+        setSendingMode("directa");
+        window.location.href = res.checkoutUrl;
+        return;
+      }
+      setSent({ code: res.code, url: whatsappUrl(message(res.code)), channel, payUrl: res.payUrl });
       return;
     }
 
@@ -191,8 +206,14 @@ export default function BookingWidget({ initialRoom = "doble", pricing }: { init
     const url = whatsappUrl(message(res.ok ? res.code : undefined));
     if (tab) tab.location.href = url;
     else window.location.href = url;
-    setSent({ code: res.ok ? res.code : "", url, channel });
+    setSent({ code: res.ok ? res.code : "", url, channel, payUrl: res.ok ? res.payUrl : undefined });
   };
+
+  const holdText = autoBooking
+    ? autoBooking.holdMinutes >= 120 && autoBooking.holdMinutes % 60 === 0
+      ? `${autoBooking.holdMinutes / 60} horas`
+      : `${autoBooking.holdMinutes} minutos`
+    : "";
 
   return (
     <div className="overflow-visible rounded-2xl bg-white shadow-2xl ring-1 ring-black/5">
@@ -382,14 +403,39 @@ export default function BookingWidget({ initialRoom = "doble", pricing }: { init
             <div className="flex flex-col items-center justify-center rounded-xl bg-teal-light p-6 text-center" role="status">
               <Clock className="size-12 text-teal" aria-hidden="true" />
               <h3 className="mt-3 font-display text-3xl text-teal">
-                {sent.channel === "directa" ? "¡Tu reservación está en proceso!" : "¡Solicitud enviada!"}
+                {sent.payUrl ? "¡Habitación apartada!" : sent.channel === "directa" ? "¡Tu reservación está en proceso!" : "¡Solicitud enviada!"}
               </h3>
               {sent.code && (
                 <p className="mt-2 text-ink/80">
                   Tu folio es <strong className="font-heavy text-lg font-black text-rust">{sent.code}</strong>
                 </p>
               )}
-              {sent.channel === "directa" ? (
+              {sent.payUrl ? (
+                <>
+                  <p className="mt-2 max-w-sm text-sm font-semibold text-ink/80">
+                    {room.name} · {checkIn && fmtShort(checkIn)} → {checkOut && fmtShort(checkOut)} · {mxn(total)} M.N.
+                  </p>
+                  <p className="mt-2 max-w-sm text-sm text-ink/75">
+                    Tu habitación queda apartada por {holdText}. Completa tu pago para confirmar tu reservación.
+                  </p>
+                  <a
+                    href={sent.payUrl}
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-rust px-6 py-3 font-heavy font-extrabold text-white shadow-md hover:bg-rust-dark"
+                  >
+                    <CreditCard className="size-5" aria-hidden="true" /> Pagar ahora
+                  </a>
+                  {sent.channel === "whatsapp" && (
+                    <a
+                      href={sent.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-[#128c4a] underline underline-offset-4"
+                    >
+                      <WhatsAppIcon className="size-4" /> Abrir WhatsApp de nuevo
+                    </a>
+                  )}
+                </>
+              ) : sent.channel === "directa" ? (
                 <>
                   <p className="mt-2 max-w-sm text-sm font-semibold text-ink/80">
                     {room.name} · {checkIn && fmtShort(checkIn)} → {checkOut && fmtShort(checkOut)} · {mxn(total)} M.N.
@@ -566,7 +612,7 @@ export default function BookingWidget({ initialRoom = "doble", pricing }: { init
               className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-rust px-5 py-3 font-heavy text-base font-extrabold text-white shadow-md transition-colors hover:bg-rust-dark disabled:opacity-70"
             >
               {sending === "directa" ? <LoaderCircle className="size-5 animate-spin" /> : <CalendarCheck className="size-5" />}
-              {sending === "directa" ? "Reservando…" : "Reservar ahora"}
+              {sending === "directa" ? "Reservando…" : autoBooking ? "Reservar y pagar" : "Reservar ahora"}
             </button>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button
@@ -587,8 +633,9 @@ export default function BookingWidget({ initialRoom = "doble", pricing }: { init
             </div>
             <p className="mt-3 flex items-start gap-1.5 text-xs text-ink/60">
               <Check className="mt-0.5 size-3.5 shrink-0 text-teal" aria-hidden="true" />
-              No se cobra nada ahora: recepción confirma la disponibilidad y te envía por WhatsApp un link de pago seguro
-              para cerrar tu reservación. Precios en pesos mexicanos (M.N.).
+              {autoBooking
+                ? "Si hay disponibilidad, apartamos tu habitación y pagas en línea con tarjeta de forma segura (Stripe); tu reservación se confirma al instante. Precios en pesos mexicanos (M.N.)."
+                : "No se cobra nada ahora: recepción confirma la disponibilidad y te envía por WhatsApp un link de pago seguro para cerrar tu reservación. Precios en pesos mexicanos (M.N.)."}
             </p>
           </div>
           )}

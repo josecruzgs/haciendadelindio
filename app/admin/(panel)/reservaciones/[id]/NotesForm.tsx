@@ -11,7 +11,7 @@ export default function NotesForm({ id, initial }: { id: number; initial: string
         name="admin_notes"
         defaultValue={initial}
         rows={4}
-        placeholder="Anticipo recibido, número de habitación asignada, factura…"
+        placeholder="Factura, peticiones especiales, objetos olvidados…"
         className="w-full rounded-lg border-2 border-black/10 p-3 text-sm outline-none focus:border-teal"
       />
       <div className="mt-2 flex items-center gap-3">
