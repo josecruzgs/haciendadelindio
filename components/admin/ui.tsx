@@ -23,15 +23,23 @@ export function ChannelTag({ channel }: { channel: Channel }) {
 }
 
 /**
- * Estado que se muestra en el panel. Una reservación confirmada que pagó en línea se ve como
- * «Pagada» (o «Anticipo pagado» si queda saldo en recepción); el estado guardado sigue siendo «confirmada».
+ * Estado que se muestra en el panel. Una reservación confirmada con pagos se ve según dónde pagó:
+ * «Pagada en línea» (Stripe), «Pagada en recepción», o «Pagada» si fue en ambos; con saldo pendiente,
+ * «Anticipo en línea» / «Anticipo en recepción». El estado guardado sigue siendo «confirmada».
  */
-export function displayStatus(r: Pick<Reservation, "status" | "paid_at" | "amount_paid" | "charge_total" | "total">) {
-  if (r.status === "confirmada" && r.paid_at) {
-    const owed = (r.charge_total ?? r.total) - (r.amount_paid ?? 0);
-    return owed > 0
-      ? { label: "Anticipo pagado", cls: "bg-teal-light text-teal ring-teal/50" }
-      : { label: "Pagada", cls: "bg-teal text-white ring-teal" };
+export function displayStatus(r: Pick<Reservation, "status" | "paid_at" | "amount_paid" | "charge_total" | "total" | "desk_paid">) {
+  const online = r.paid_at ? (r.amount_paid ?? 0) : 0;
+  const desk = r.desk_paid ?? 0;
+  if (r.status === "confirmada" && (online > 0 || desk > 0)) {
+    const owed = (r.charge_total ?? r.total) - online - desk;
+    if (owed > 0) {
+      return { label: online > 0 ? "Anticipo en línea" : "Anticipo en recepción", cls: "bg-teal-light text-teal ring-teal/50" };
+    }
+    return online > 0 && desk > 0
+      ? { label: "Pagada", cls: "bg-teal text-white ring-teal" }
+      : online > 0
+        ? { label: "Pagada en línea", cls: "bg-teal text-white ring-teal" }
+        : { label: "Pagada en recepción", cls: "bg-teal-dark text-white ring-teal-dark" };
   }
   return statusMeta[r.status];
 }

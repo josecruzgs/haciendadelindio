@@ -240,8 +240,8 @@ export async function listReservations(opts: { status?: Status | "todas" | "paga
   const where: string[] = [];
   const params: unknown[] = [];
   if (opts.status === "pagada") {
-    // Pagaron en línea (total o anticipo) y siguen activas o ya se hospedaron
-    where.push(`paid_at IS NOT NULL AND status IN ('confirmada', 'hospedado', 'completada')`);
+    // Pagaron (en línea o en recepción, total o anticipo) y siguen activas o ya se hospedaron
+    where.push(`(paid_at IS NOT NULL OR desk_paid > 0) AND status IN ('confirmada', 'hospedado', 'completada')`);
   } else if (opts.status && opts.status !== "todas") {
     params.push(opts.status);
     where.push(`status = $${params.length}`);

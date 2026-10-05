@@ -43,6 +43,8 @@ export default function NewReservationForm({
   const [phoneCountry, setPhoneCountry] = useState<PhoneCountry>("MX");
   const [state, action, pending] = useActionState(createManualReservation, undefined);
   const [walkIn, setWalkIn] = useState(initialWalkIn);
+  const [customTotal, setCustomTotal] = useState("");
+  const [paidNow, setPaidNow] = useState("");
   const [roomIds, setRoomIds] = useState<number[]>(preset ? [preset.id] : []);
   const [f, setF] = useState({
     room: preset?.type ?? "doble", rooms: 1, adults: 2, children: 0, check_in: today, check_out: tomorrow, breakfasts: 0,
@@ -198,6 +200,8 @@ export default function NewReservationForm({
           name="total"
           type="number"
           min={0}
+          value={customTotal}
+          onChange={(e) => setCustomTotal(e.target.value)}
           placeholder={q ? String(q.total) : ""}
           className={input}
         />
@@ -228,7 +232,28 @@ export default function NewReservationForm({
         <legend className="px-1 text-sm font-bold text-ink/75">Pago recibido ahora (opcional)</legend>
         <label className={label}>
           Monto
-          <input name="paid_now" type="number" min={0} placeholder="0" className={input} />
+          <span className="mt-1 flex gap-2">
+            <input
+              name="paid_now"
+              type="number"
+              min={0}
+              placeholder="0"
+              value={paidNow}
+              onChange={(e) => setPaidNow(e.target.value)}
+              className={`${input} mt-0`}
+            />
+            <button
+              type="button"
+              disabled={!q && !customTotal}
+              onClick={() => setPaidNow(customTotal || String(q?.total ?? ""))}
+              className="shrink-0 rounded-lg bg-teal-light px-3 text-xs font-bold text-teal hover:bg-teal hover:text-white disabled:opacity-50"
+            >
+              Pagó el total
+            </button>
+          </span>
+          <span className="mt-1 block text-xs font-normal text-ink/55">
+            Si ya pagó, regístralo aquí para que aparezca como «Pagada en recepción».
+          </span>
         </label>
         <label className={label}>
           Forma de pago
