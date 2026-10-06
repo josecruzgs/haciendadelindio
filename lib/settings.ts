@@ -44,9 +44,12 @@ export type BookingSettings = {
   auto: boolean;
   /** Minutos que se aparta la habitación mientras el huésped paga (Stripe pide de 30 a 1440). */
   holdMinutes: number;
+  /** Horarios del hotel ("15:00"); vacío = no se muestra. Aparecen en el recibo de pago. */
+  checkInTime: string;
+  checkOutTime: string;
 };
 
-export const DEFAULT_BOOKING: BookingSettings = { auto: true, holdMinutes: 60 };
+export const DEFAULT_BOOKING: BookingSettings = { auto: true, holdMinutes: 60, checkInTime: "15:00", checkOutTime: "" };
 export const MIN_HOLD = 30;
 export const MAX_HOLD = 1440;
 

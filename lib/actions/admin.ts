@@ -277,7 +277,11 @@ export async function saveBookingSettings(_: FormState, fd: FormData): Promise<F
     return { error: `El apartado debe ser de ${MIN_HOLD} a ${MAX_HOLD} minutos.` };
   }
   const auto = fd.get("auto") === "on";
-  await saveSetting("booking", { auto, holdMinutes } satisfies BookingSettings);
+  const time = (k: string) => {
+    const v = str(fd, k);
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : "";
+  };
+  await saveSetting("booking", { auto, holdMinutes, checkInTime: time("checkInTime"), checkOutTime: time("checkOutTime") } satisfies BookingSettings);
   revalidatePath("/", "layout");
   return { ok: auto ? "Reserva automática activada." : "Reserva automática desactivada: recepción confirma cada solicitud." };
 }

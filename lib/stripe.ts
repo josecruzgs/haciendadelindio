@@ -1,7 +1,10 @@
 import "server-only";
 import Stripe from "stripe";
 import { headers } from "next/headers";
-import { getRoom } from "@/data/rooms";
+import { getRoom, withPricing, type Pricing } from "@/data/rooms";
+import { getPricing } from "./catalog";
+import { getBooking } from "./settings";
+import { fmtKey } from "./dates";
 import { extendHold, markPaid, saveCheckoutSession, type Reservation } from "./reservations";
 
 /**
@@ -45,6 +48,59 @@ export async function siteUrl() {
 
 export const payUrl = (base: string, token: string) => `${base}/pagar/${token}`;
 
+type Line = { name: string; unit: number; quantity: number };
+
+const fmtDay = (k: string) => fmtKey(k, { weekday: "short", day: "numeric", month: "short" });
+
+/**
+ * Conceptos del recibo de Stripe: hospedaje por noche, persona adicional y desayunos, con los precios
+ * vigentes. Si no suman exactamente lo que se cobra (anticipo, total editado a mano o precios que cambiaron
+ * desde que se reservó), se usa un solo concepto con el detalle en el nombre.
+ */
+export function receiptLines(r: Reservation, pricing: Pricing): Line[] {
+  const room = withPricing(pricing).find((x) => x.slug === r.room);
+  const name = room?.name ?? getRoom(r.room)?.name ?? r.room;
+  const stay = `${fmtDay(r.check_in)} al ${fmtDay(r.check_out)}`;
+  const nightsLabel = `${r.nights} noche${r.nights !== 1 ? "s" : ""}`;
+  const due = r.amount_due ?? 0;
+  const summary = [
+    `${name}${r.rooms > 1 ? ` x${r.rooms}` : ""} · ${stay} (${nightsLabel})`,
+    `${r.adults} adulto${r.adults !== 1 ? "s" : ""}${r.children ? `, ${r.children} niño${r.children !== 1 ? "s" : ""}` : ""}`,
+    r.breakfasts ? `${r.breakfasts} desayuno${r.breakfasts !== 1 ? "s" : ""} por día` : "",
+  ].filter(Boolean).join(" · ");
+  const single = (label: string): Line[] => [{ name: `${label} · Reservación ${r.code} · ${summary}`, unit: due, quantity: 1 }];
+
+  const total = r.charge_total ?? r.total;
+  if (!room) return single("Hospedaje");
+  if (due < total) return single("Anticipo");
+
+  const promo = r.promo_total != null && total === r.promo_total && r.promo_total < r.total;
+  const guests = r.adults + r.children;
+  const extraGuests = Math.max(0, guests - room.includedGuests * r.rooms);
+  const lines: Line[] = [
+    {
+      name: `${name}${r.rooms > 1 ? ` (${r.rooms} habitaciones)` : ""} · ${stay}${promo ? " · tarifa promo pago anticipado" : ""}`,
+      unit: promo ? room.promoPrice : room.price,
+      quantity: r.nights * r.rooms,
+    },
+  ];
+  if (extraGuests > 0) {
+    lines.push({ name: `Persona adicional (${extraGuests} por noche)`, unit: pricing.extraPersonFee, quantity: extraGuests * r.nights });
+  }
+  if (r.breakfasts > 0) {
+    lines.push({ name: `Desayuno (${r.breakfasts} por día)`, unit: pricing.breakfastPrice, quantity: r.breakfasts * r.nights });
+  }
+  const sum = lines.reduce((t, l) => t + l.unit * l.quantity, 0);
+  return sum === due && lines.every((l) => l.unit > 0) ? lines : single("Hospedaje");
+}
+
+/** Resumen del recibo: folio, entrada y salida con horario. */
+function receiptSummary(r: Reservation, times: { checkInTime: string; checkOutTime: string }) {
+  const at = (t: string) => (t ? ` desde las ${t} h` : "");
+  const until = (t: string) => (t ? ` antes de las ${t} h` : "");
+  return `Hacienda del Indio ${r.code} · Entrada ${fmtDay(r.check_in)}${at(times.checkInTime)} · Salida ${fmtDay(r.check_out)}${until(times.checkOutTime)}`;
+}
+
 /** Crea la sesión de Checkout (o reutiliza la que siga abierta) y regresa su URL. */
 export async function checkoutUrl(r: Reservation) {
   if (!r.pay_token || !r.amount_due) throw new Error("La reservación no tiene liga de pago.");
@@ -56,7 +112,16 @@ export async function checkoutUrl(r: Reservation) {
   }
 
   const base = await siteUrl();
-  const room = getRoom(r.room);
+  const [pricing, booking] = await Promise.all([getPricing(), getBooking()]);
+  const lines = receiptLines(r, pricing);
+  const summary = receiptSummary(r, booking);
+  // Cliente con idioma español para que el recibo que envía Stripe por correo llegue en español
+  const customer = await s.customers.create({
+    name: r.name,
+    phone: r.phone || undefined,
+    preferred_locales: ["es-419", "es"],
+    metadata: { reservation_id: String(r.id), code: r.code },
+  });
   // Reserva automática: la sesión vence con el apartado (Stripe pide de 30 min a 24 h desde ahora)
   let expiresAt: number | undefined;
   if (r.hold_until) {
@@ -70,24 +135,15 @@ export async function checkoutUrl(r: Reservation) {
     mode: "payment",
     currency: "mxn",
     locale: "es",
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: "mxn",
-          unit_amount: r.amount_due * 100,
-          product_data: {
-            name: `Reservación ${r.code} · ${room?.name ?? r.room}${r.rooms > 1 ? ` x${r.rooms}` : ""}`,
-            description: `Del ${r.check_in} al ${r.check_out} · ${r.nights} noche${r.nights !== 1 ? "s" : ""}${
-              r.breakfasts ? ` · ${r.breakfasts} desayuno${r.breakfasts !== 1 ? "s" : ""} por día` : ""
-            }`,
-          },
-        },
-      },
-    ],
+    customer: customer.id,
+    line_items: lines.map((l) => ({
+      quantity: l.quantity,
+      price_data: { currency: "mxn", unit_amount: l.unit * 100, product_data: { name: l.name } },
+    })),
+    custom_text: { submit: { message: summary } },
     client_reference_id: String(r.id),
     metadata: { reservation_id: String(r.id), code: r.code },
-    payment_intent_data: { description: `Hacienda del Indio ${r.code}`, metadata: { reservation_id: String(r.id), code: r.code } },
+    payment_intent_data: { description: summary, metadata: { reservation_id: String(r.id), code: r.code } },
     success_url: `${payUrl(base, r.pay_token)}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: payUrl(base, r.pay_token),
   });
