@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
-import { listReservations, STATUSES, type Status } from "@/lib/reservations";
+import { balanceDue, listReservations, STATUSES, type Status } from "@/lib/reservations";
 import { ago, Card, ChannelTag, guestsLabel, money, roomLabel, stayLabel, StatusBadge, statusMeta } from "@/components/admin/ui";
 
 export const metadata: Metadata = { title: "Reservaciones" };
@@ -112,7 +112,9 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right font-bold">{money(r.total)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <TotalCell r={r} />
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={r.status} reservation={r} />
                   </td>
@@ -125,5 +127,24 @@ export default async function ReservationsPage({ searchParams }: { searchParams:
       </Card>
       <p className="text-xs text-ink/50">{rows.length} resultado{rows.length !== 1 ? "s" : ""} (máximo 200 más recientes).</p>
     </div>
+  );
+}
+
+/** Total a cobrar (ya con promoción), lo pagado (en línea + recepción) y el saldo. */
+function TotalCell({ r }: { r: Awaited<ReturnType<typeof listReservations>>[number] }) {
+  const charge = r.charge_total ?? r.total;
+  const paid = (r.amount_paid ?? 0) + (r.desk_paid ?? 0);
+  const balance = balanceDue(r);
+  return (
+    <>
+      <p className="font-bold">{money(charge)}</p>
+      {charge !== r.total && <p className="text-xs text-ink/45 line-through">{money(r.total)}</p>}
+      {r.status !== "cancelada" && paid > 0 && (
+        <p className="text-xs whitespace-nowrap text-teal">
+          pagado {money(paid)}
+          {balance > 0 && <span className="text-rust"> · saldo {money(balance)}</span>}
+        </p>
+      )}
+    </>
   );
 }
