@@ -55,8 +55,8 @@ export default async function Home() {
           </div>
           <div className="relative min-h-60">
             <Image
-              src="/images/hab-toallas-espejo.jpg"
-              alt="Toallas bordadas con el logotipo y cama de la habitación al fondo"
+              src="/images/individuales/sencilla-tocador-espejo.jpg"
+              alt="Toallas bordadas con el logotipo y cama de la habitación reflejada en el espejo"
               fill
               sizes="(min-width: 768px) 50vw, 100vw"
               className="object-cover"
