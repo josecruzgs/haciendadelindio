@@ -86,7 +86,7 @@ export default async function Home() {
           <div className="mt-10 grid items-center gap-4 md:grid-cols-[auto_1fr_1fr_auto] md:gap-4">
             <ul className="order-2 flex justify-center gap-8 md:order-none md:flex-col md:gap-12">
               <ServiceIcon icon={Wifi} label="Wifi gratis" />
-              <ServiceIcon icon={UtensilsCrossed} label="Cocina 24/7" />
+              <ServiceIcon icon={UtensilsCrossed} label="Cocina" />
             </ul>
             <PhotoCard src="/images/zona-comedor-sala.jpg" alt="Comedor con mesas de mármol y sala con sillones turquesa" />
             <PhotoCard src="/images/zona-recepcion.jpg" alt="Recepción de madera con mural de artesanías de Baja California" />
@@ -155,7 +155,7 @@ export default async function Home() {
             </p>
             <h2 className="mt-2 font-display text-4xl md:text-5xl">Tu equipo de trabajo, bien descansado.</h2>
             <p className="mt-3 max-w-2xl text-lg text-cream/85">
-              Habitaciones triples para hasta 6 personas, estacionamiento incluido, cocina 24/7 y lavandería
+              Habitaciones triples para hasta 6 personas, estacionamiento incluido, cocina y lavandería
               completa. Cotiza varias habitaciones para tu cuadrilla y te preparamos una tarifa.
             </p>
           </div>

@@ -8,7 +8,7 @@ import { site, whatsappUrl } from "@/data/site";
 
 export const metadata: Metadata = {
   title: { absolute: "Menú | Hacienda del Indio" },
-  description: "Restaurante 24/7 de Hacienda del Indio: descarga nuestro menú de deliciosos platillos hasta tu habitación.",
+  description: "Restaurante de Hacienda del Indio: descarga nuestro menú de deliciosos platillos hasta tu habitación.",
   alternates: { canonical: "/menu" },
 };
 
@@ -28,7 +28,7 @@ export default async function MenuPage() {
       <section className="bg-sand-light py-14">
         <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 md:grid-cols-2">
           <div>
-            <h1 className="font-display text-5xl text-teal md:text-6xl">Restaurante 24/7</h1>
+            <h1 className="font-display text-5xl text-teal md:text-6xl">Restaurante</h1>
             <p className="mt-3 text-xl text-ink/80">Descarga nuestro menú de deliciosos platillos hasta tu habitación.</p>
             <ul className="mt-5 space-y-2 text-ink/80">
               <li className="flex items-center gap-2">

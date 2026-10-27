@@ -34,7 +34,7 @@ const items: NavItem[] = [
     match: (p) => p.startsWith("/menu"),
     children: [
       { label: "Servicios", href: "/#servicios" },
-      { label: "Restaurante 24/7", href: "/menu" },
+      { label: "Restaurante", href: "/menu" },
     ],
   },
   { label: "Ubicación", href: "/#ubicacion" },
